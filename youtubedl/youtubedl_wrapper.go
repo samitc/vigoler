@@ -3,6 +3,7 @@ package youtubedl
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -24,7 +25,8 @@ type Format struct {
 	Description        string
 }
 type VideoUrl struct {
-	url string
+	url    string
+	IsLive bool
 }
 
 func CreateYoutubeDlWrapper() YoutubeDlWrapper {
@@ -110,15 +112,24 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
 		const URL_NAME = "\"webpage_url\": \""
+		const ALIVE_NAME = "\"is_live\": "
 		const URL_NAME_LEN = len(URL_NAME)
 		var videos []VideoUrl
 		for s := range *output {
 			urlIndex := strings.Index(s, URL_NAME)
 			if urlIndex != -1 {
+				if strings.Count(s, URL_NAME) > 1 {
+					fmt.Println(s) //TODO: should not happen - two video in the same line
+				}
+				isAlive := strings.Index(s, ALIVE_NAME) + len(ALIVE_NAME)
+				urlAlive := false
+				if s[isAlive:isAlive+4] == "true" {
+					urlAlive = true
+				}
 				videoUrl := s[urlIndex+URL_NAME_LEN : strings.Index(s[urlIndex+URL_NAME_LEN:], "\"")+urlIndex+URL_NAME_LEN ]
-				videos = append(videos, VideoUrl{url: videoUrl})
+				videos = append(videos, VideoUrl{url: videoUrl, IsLive: urlAlive})
 			} else {
-				fmt.Println(s)
+				fmt.Println(s) //TODO
 			}
 		}
 		async.Result = &videos
@@ -126,6 +137,9 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 	return &async, nil
 }
 func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string) (*Async, error) {
+	if url.IsLive {
+		return nil, errors.New("can not download live video") //TODO: make new error type
+	}
 	ctx := context.Background()
 	randName := fmt.Sprintf("%010d", rand.Int())
 	output, err := youdown.runCommand(ctx, "-o", randName+"%(title)s.%(ext)s", "-f", format, url.url)
@@ -160,4 +174,36 @@ func (youdown *YoutubeDlWrapper) DownloadBestVideo(url VideoUrl) (*Async, error)
 }
 func (youdown *YoutubeDlWrapper) DownloadBest(url VideoUrl) (*Async, error) {
 	return youdown.downloadUrl(url, "best")
+}
+func (youdown *YoutubeDlWrapper) getRealVideoUrl(url VideoUrl, format string) (*Async, error) {
+	ctx := context.Background()
+	output, err := youdown.runCommand(ctx, "-g", "-f", format, url.url)
+	if err != nil {
+		return nil, err
+	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	async := CreateAsync(&wg)
+	go func(async *Async, output *<-chan string) {
+		defer async.wg.Done()
+		for s := range *output {
+			if async.Result != nil {
+				fmt.Println(s) //TODO: return error - should not happen
+			}
+			async.Result = &s
+		}
+	}(&async, &output)
+	return &async, nil
+}
+func (youdown *YoutubeDlWrapper) GetRealVideoUrl(url VideoUrl, format Format) (*Async, error) {
+	return youdown.getRealVideoUrl(url, strconv.Itoa(format.Number))
+}
+func (youdown *YoutubeDlWrapper) GetRealVideoUrlBestAudio(url VideoUrl) (*Async, error) {
+	return youdown.getRealVideoUrl(url, "bestaudio")
+}
+func (youdown *YoutubeDlWrapper) GetRealVideoUrlBestVideo(url VideoUrl) (*Async, error) {
+	return youdown.getRealVideoUrl(url, "bestvideo")
+}
+func (youdown *YoutubeDlWrapper) GetRealVideoUrlBest(url VideoUrl) (*Async, error) {
+	return youdown.getRealVideoUrl(url, "best")
 }
