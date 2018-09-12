@@ -1,21 +1,17 @@
-package youtubedl
+package vigoler
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand"
-	"os"
-	"os/exec"
 	"strconv"
-	"strings"
+	str "strings"
 	"sync"
 )
 
 type YoutubeDlWrapper struct {
-	appLocation string
+	app externalApp
 }
 type Format struct {
 	Number             int
@@ -30,45 +26,18 @@ type VideoUrl struct {
 }
 
 func CreateYoutubeDlWrapper() YoutubeDlWrapper {
-	wrapper := YoutubeDlWrapper{appLocation: "youtube-dl"}
+	wrapper := YoutubeDlWrapper{app: externalApp{appLocation: "youtube-dl"}}
 	return wrapper
-}
-func (youdown *YoutubeDlWrapper) runCommand(ctx context.Context, arg ...string) (<-chan string, error) {
-	cmd := exec.CommandContext(ctx, youdown.appLocation, arg...)
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		return nil, err
-	}
-	defer writer.Close()
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	outputChannel := make(chan string)
-	go func(outChan chan string, reader io.ReadCloser) {
-		defer reader.Close()
-		rd := bufio.NewReader(reader)
-		str, err := rd.ReadString('\n')
-		for ; err == nil; str, err = rd.ReadString('\n') {
-			outChan <- str
-		}
-		if err != io.EOF {
-			panic(err)
-		}
-		close(outChan)
-	}(outputChannel, reader)
-	return outputChannel, nil
 }
 func (youdown *YoutubeDlWrapper) GetFormats(url VideoUrl) (*Async, error) {
 	ctx := context.Background()
-	output, err := youdown.runCommand(ctx, "-F", url.url)
+	output, err := youdown.app.runCommandChan(ctx, "-F", url.url)
 	if err != nil {
 		return nil, err
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := CreateAsync(&wg)
+	async := createAsyncWaitGroup(&wg)
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
 		isHeader := true
@@ -80,20 +49,20 @@ func (youdown *YoutubeDlWrapper) GetFormats(url VideoUrl) (*Async, error) {
 			}
 			if isHeader {
 				formatCodeStart = 0
-				extensionStart = strings.Index(s, "extension")
-				resolutionStart = strings.Index(s, "resolution")
-				noteStart = strings.Index(s, "note")
+				extensionStart = str.Index(s, "extension")
+				resolutionStart = str.Index(s, "resolution")
+				noteStart = str.Index(s, "note")
 				isHeader = false
 			} else {
-				num, _ := strconv.Atoi(strings.Trim(s[formatCodeStart:extensionStart], " "))
+				num, _ := strconv.Atoi(str.Trim(s[formatCodeStart:extensionStart], " "))
 				hasVideo := true
 				hasAudio := true
-				if strings.Index(s, "video only") != -1 {
+				if str.Index(s, "video only") != -1 {
 					hasAudio = false
-				} else if strings.Index(s, "audio only") != -1 {
+				} else if str.Index(s, "audio only") != -1 {
 					hasVideo = false
 				}
-				formats = append(formats, Format{Number: num, FileFormat: strings.Trim(s[extensionStart:resolutionStart], " "), Resolution: strings.Trim(s[resolutionStart:noteStart], " "), hasVideo: hasVideo, hasAudio: hasAudio, Description: s})
+				formats = append(formats, Format{Number: num, FileFormat: str.Trim(s[extensionStart:resolutionStart], " "), Resolution: str.Trim(s[resolutionStart:noteStart], " "), hasVideo: hasVideo, hasAudio: hasAudio, Description: s})
 			}
 		}
 		async.Result = &formats
@@ -102,13 +71,13 @@ func (youdown *YoutubeDlWrapper) GetFormats(url VideoUrl) (*Async, error) {
 }
 func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 	ctx := context.Background()
-	output, err := youdown.runCommand(ctx, "-j", url)
+	output, err := youdown.app.runCommandChan(ctx, "-j", url)
 	if err != nil {
 		return nil, err
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := CreateAsync(&wg)
+	async := createAsyncWaitGroup(&wg)
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
 		const URL_NAME = "\"webpage_url\": \""
@@ -116,17 +85,17 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 		const URL_NAME_LEN = len(URL_NAME)
 		var videos []VideoUrl
 		for s := range *output {
-			urlIndex := strings.Index(s, URL_NAME)
+			urlIndex := str.Index(s, URL_NAME)
 			if urlIndex != -1 {
-				if strings.Count(s, URL_NAME) > 1 {
+				if str.Count(s, URL_NAME) > 1 {
 					fmt.Println(s) //TODO: should not happen - two video in the same line
 				}
-				isAlive := strings.Index(s, ALIVE_NAME) + len(ALIVE_NAME)
+				isAlive := str.Index(s, ALIVE_NAME) + len(ALIVE_NAME)
 				urlAlive := false
 				if s[isAlive:isAlive+4] == "true" {
 					urlAlive = true
 				}
-				videoUrl := s[urlIndex+URL_NAME_LEN : strings.Index(s[urlIndex+URL_NAME_LEN:], "\"")+urlIndex+URL_NAME_LEN ]
+				videoUrl := s[urlIndex+URL_NAME_LEN : str.Index(s[urlIndex+URL_NAME_LEN:], "\"")+urlIndex+URL_NAME_LEN ]
 				videos = append(videos, VideoUrl{url: videoUrl, IsLive: urlAlive})
 			} else {
 				fmt.Println(s) //TODO
@@ -142,19 +111,19 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string) (*Asyn
 	}
 	ctx := context.Background()
 	randName := fmt.Sprintf("%010d", rand.Int())
-	output, err := youdown.runCommand(ctx, "-o", randName+"%(title)s.%(ext)s", "-f", format, url.url)
+	output, err := youdown.app.runCommandChan(ctx, "-o", randName+"%(title)s.%(ext)s", "-f", format, url.url)
 	if err != nil {
 		return nil, err
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := CreateAsync(&wg)
+	async := createAsyncWaitGroup(&wg)
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
 		const DESTINATION = "Destination:"
 		var dest string
 		for s := range *output {
-			destIndex := strings.Index(s, DESTINATION)
+			destIndex := str.Index(s, DESTINATION)
 			if destIndex != -1 {
 				dest = s[destIndex+len(DESTINATION)+1 : len(s)-1]
 			}
@@ -177,13 +146,13 @@ func (youdown *YoutubeDlWrapper) DownloadBest(url VideoUrl) (*Async, error) {
 }
 func (youdown *YoutubeDlWrapper) getRealVideoUrl(url VideoUrl, format string) (*Async, error) {
 	ctx := context.Background()
-	output, err := youdown.runCommand(ctx, "-g", "-f", format, url.url)
+	output, err := youdown.app.runCommandChan(ctx, "-g", "-f", format, url.url)
 	if err != nil {
 		return nil, err
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := CreateAsync(&wg)
+	async := createAsyncWaitGroup(&wg)
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
 		for s := range *output {
