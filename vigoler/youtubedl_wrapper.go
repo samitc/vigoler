@@ -2,32 +2,37 @@ package vigoler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
 	"strconv"
 	str "strings"
 	"sync"
+	"time"
 )
 
 type YoutubeDlWrapper struct {
-	app externalApp
+	app    externalApp
+	random rand.Rand
 }
 type Format struct {
 	Number             int
-	hasVideo, hasAudio bool
 	FileFormat         string
 	Resolution         string
 	Description        string
+	hasVideo, hasAudio bool
 }
 type VideoUrl struct {
 	Name   string
-	url    string
 	IsLive bool
+	url    string
 }
 
 func CreateYoutubeDlWrapper() YoutubeDlWrapper {
-	wrapper := YoutubeDlWrapper{app: externalApp{appLocation: "youtube-dl"}}
+	s1 := rand.NewSource(time.Now().UnixNano())
+	r1 := rand.New(s1)
+	wrapper := YoutubeDlWrapper{app: externalApp{appLocation: "youtube-dl"}, random: *r1}
 	return wrapper
 }
 func (youdown *YoutubeDlWrapper) GetFormats(url VideoUrl) (*Async, error) {
@@ -115,7 +120,7 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string) (*Asyn
 		return nil, errors.New("can not download live video") //TODO: make new error type
 	}
 	ctx := context.Background()
-	randName := fmt.Sprintf("%010d", rand.Int())
+	randName := fmt.Sprintf("%010d", youdown.random.Int())
 	output, err := youdown.app.runCommandChan(ctx, "-o", randName+"%(title)s.%(ext)s", "-f", format, url.url)
 	if err != nil {
 		return nil, err

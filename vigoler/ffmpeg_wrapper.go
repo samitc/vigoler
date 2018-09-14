@@ -1,17 +1,25 @@
 package vigoler
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
+	"strconv"
+	"strings"
 	"sync"
 )
 
 type FFmpegWrapper struct {
 	app externalApp
 }
+type DownloadCallback func(url string, setting DownloadSettings, output string)
 type DownloadSettings struct {
-	MaxSizeInKb  int
-	MaxTimeInSec int
+	MaxSizeInKb         int
+	SizeSplitThreshold  int
+	MaxTimeInSec        int
+	TimeSplitThreshold  int
+	CallbackBeforeSplit DownloadCallback
 }
 
 func CreateFfmpegWrapper() FFmpegWrapper {
@@ -31,19 +39,75 @@ func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 	return &async, nil
 }
 func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output string) (*Async, error) {
+	const KB_TO_BYTE = 1024
 	url = url[:len(url)-1]
-	outChan, err := ff.app.runCommandChan(context.Background(), "-i", url, "-c", "copy", output)
+	needCommandReader := setting.CallbackBeforeSplit != nil && (setting.SizeSplitThreshold > 0 || setting.TimeSplitThreshold > 0)
+	if setting.SizeSplitThreshold <= 0 {
+		setting.SizeSplitThreshold = setting.MaxSizeInKb
+	}
+	if setting.TimeSplitThreshold <= 0 {
+		setting.TimeSplitThreshold = setting.MaxTimeInSec
+	}
+	args := []string{"-i", url, "-c", "copy"}
+	if setting.MaxTimeInSec > 0 {
+		args = append(args, "-t", strconv.Itoa(setting.MaxTimeInSec))
+	}
+	if setting.MaxSizeInKb > 0 {
+		args = append(args, "-fs", strconv.Itoa(setting.MaxSizeInKb*KB_TO_BYTE))
+	}
+	args = append(args, output)
+	waitAble, reader, _, err := ff.app.runCommand(context.Background(), false, !needCommandReader, args...)
 	if err != nil {
 		return nil, err
 	}
-	var wg sync.WaitGroup
-	wg.Add(1)
-	async := createAsyncWaitGroup(&wg)
-	go func(async *Async, output *<-chan string) {
-		defer async.wg.Done()
-		for s := range outChan {
-			fmt.Println(s)
-		}
-	}(&async, &outChan)
+	var async Async
+	if !needCommandReader {
+		async = createAsyncWaitable(waitAble)
+	} else {
+		var wg sync.WaitGroup
+		wg.Add(1)
+		async = createAsyncWaitGroup(&wg)
+		go func(async *Async, reader io.ReadCloser, setting *DownloadSettings) {
+			defer async.wg.Done()
+			defer reader.Close()
+			timeStringToInt := func(s string) int {
+				return int((s[0]-'0')*10 + s[1] - '0')
+			}
+			beforeDown := func(line string) bool { return line[:len(line)-2] == "Press [q] to stop, [?] for help" }
+			processData := func(line string) (time, size int) {
+				splits := strings.Split(line, "=")
+				sizeStr := splits[4]
+				numberEnd := strings.Index(sizeStr, "k")
+				numberStart := strings.LastIndex(sizeStr[:numberEnd], " ") + 1
+				size, _ = strconv.Atoi(sizeStr[numberStart:numberEnd])
+				timeStr := splits[5]
+				time = timeStringToInt(timeStr[6:8]) + 60*(timeStringToInt(timeStr[3:5])+60*timeStringToInt(timeStr[:2]))
+				return
+			}
+			rd := bufio.NewReader(reader)
+			var delim byte = '\n'
+			line, err := rd.ReadString(delim)
+			isFinish := false
+			for ; err == nil; line, err = rd.ReadString(delim) {
+				fmt.Println(line)
+				if !isFinish {
+					if delim == '\n' {
+						if beforeDown(line) {
+							delim = '\r'
+						}
+					} else {
+						time, size := processData(line)
+						if time > setting.TimeSplitThreshold || size > setting.SizeSplitThreshold {
+							go setting.CallbackBeforeSplit(url, *setting, output)
+							isFinish = true
+						}
+					}
+				}
+			}
+			if err != io.EOF {
+				panic(err)
+			}
+		}(&async, reader, &setting)
+	}
 	return &async, nil
 }
