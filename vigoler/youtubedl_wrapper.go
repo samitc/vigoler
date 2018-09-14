@@ -72,13 +72,13 @@ func (youdown *YoutubeDlWrapper) GetFormats(url VideoUrl) (*Async, error) {
 				formats = append(formats, Format{Number: num, FileFormat: str.Trim(s[extensionStart:resolutionStart], " "), Resolution: str.Trim(s[resolutionStart:noteStart], " "), hasVideo: hasVideo, hasAudio: hasAudio, Description: s})
 			}
 		}
-		async.Result = &formats
+		async.setResult(&formats, nil, "")
 	}(&async, &output)
 	return &async, nil
 }
 func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 	ctx := context.Background()
-	output, err := youdown.app.runCommandChan(ctx, "-j", url)
+	output, err := youdown.app.runCommandChan(ctx, "-i", "-j", url)
 	if err != nil {
 		return nil, err
 	}
@@ -92,20 +92,27 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 		const TITLE_NAME = "title"
 		const EXT_NAME = "ext"
 		var videos []VideoUrl
+		warnOutput := ""
 		for s := range *output {
-			j := []byte(s)
-			var data interface{}
-			json.Unmarshal(j, &data)
-			dMap := data.(map[string]interface{})
-			var isAlive bool
-			if dMap[ALIVE_NAME] == nil {
-				isAlive = false
+			errorIndex := str.Index(s, "ERROR")
+			warnIndex := str.Index(s, "WARNING")
+			if errorIndex != -1 || warnIndex != -1 {
+				warnOutput += s
 			} else {
-				isAlive = dMap[ALIVE_NAME].(bool)
+				j := []byte(s)
+				var data interface{}
+				json.Unmarshal(j, &data)
+				dMap := data.(map[string]interface{})
+				var isAlive bool
+				if dMap[ALIVE_NAME] == nil {
+					isAlive = false
+				} else {
+					isAlive = dMap[ALIVE_NAME].(bool)
+				}
+				videos = append(videos, VideoUrl{Ext: dMap[EXT_NAME].(string), url: dMap[URL_NAME].(string), Name: dMap[TITLE_NAME].(string), IsLive: isAlive})
 			}
-			videos = append(videos, VideoUrl{Ext: dMap[EXT_NAME].(string), url: dMap[URL_NAME].(string), Name: dMap[TITLE_NAME].(string), IsLive: isAlive})
 		}
-		async.Result = &videos
+		async.setResult(&videos, nil, warnOutput)
 	}(&async, &output)
 	return &async, nil
 }
@@ -132,7 +139,7 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string) (*Asyn
 				dest = s[destIndex+len(DESTINATION)+1 : len(s)-1]
 			}
 		}
-		async.Result = &dest
+		async.setResult(&dest, nil, "")
 	}(&async, &output)
 	return &async, nil
 }
@@ -163,7 +170,7 @@ func (youdown *YoutubeDlWrapper) getRealVideoUrl(url VideoUrl, format string) (*
 			if async.Result != nil {
 				fmt.Println(s) //TODO: return error - should not happen
 			}
-			async.Result = &s
+			async.setResult(&s, nil, "")
 		}
 	}(&async, &output)
 	return &async, nil
