@@ -26,6 +26,7 @@ type Format struct {
 type VideoUrl struct {
 	Name   string
 	IsLive bool
+	Ext    string
 	url    string
 }
 
@@ -86,30 +87,23 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 	async := createAsyncWaitGroup(&wg)
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
-		const URL_NAME = "\"webpage_url\": \""
-		const ALIVE_NAME = "\"is_live\": "
-		const TITLE_NAME = "\"title\": \""
-		const URL_NAME_LEN = len(URL_NAME)
-		const TITLE_NAME_LEN = len(TITLE_NAME)
+		const URL_NAME = "webpage_url"
+		const ALIVE_NAME = "is_live"
+		const TITLE_NAME = "title"
+		const EXT_NAME = "ext"
 		var videos []VideoUrl
 		for s := range *output {
-			urlIndex := str.Index(s, URL_NAME)
-			if urlIndex != -1 {
-				if str.Count(s, URL_NAME) > 1 {
-					fmt.Println(s) //TODO: should not happen - two video in the same line
-				}
-				isAlive := str.Index(s, ALIVE_NAME) + len(ALIVE_NAME)
-				urlAlive := false
-				if s[isAlive:isAlive+4] == "true" {
-					urlAlive = true
-				}
-				titleIndex := str.Index(s, TITLE_NAME)
-				videoUrl := s[urlIndex+URL_NAME_LEN : str.Index(s[urlIndex+URL_NAME_LEN:], "\"")+urlIndex+URL_NAME_LEN ]
-				title := s[titleIndex+TITLE_NAME_LEN : str.Index(s[titleIndex+TITLE_NAME_LEN:], "\"")+titleIndex+TITLE_NAME_LEN]
-				videos = append(videos, VideoUrl{url: videoUrl, IsLive: urlAlive, Name: title})
+			j := []byte(s)
+			var data interface{}
+			json.Unmarshal(j, &data)
+			dMap := data.(map[string]interface{})
+			var isAlive bool
+			if dMap[ALIVE_NAME] == nil {
+				isAlive = false
 			} else {
-				fmt.Println(s) //TODO
+				isAlive = dMap[ALIVE_NAME].(bool)
 			}
+			videos = append(videos, VideoUrl{Ext: dMap[EXT_NAME].(string), url: dMap[URL_NAME].(string), Name: dMap[TITLE_NAME].(string), IsLive: isAlive})
 		}
 		async.Result = &videos
 	}(&async, &output)
