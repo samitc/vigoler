@@ -23,7 +23,7 @@ func (external *externalApp) runCommand(ctx context.Context, createChan bool, ar
 		defer writer.Close()
 		cmd.Stdout = writer
 		cmd.Stderr = writer
-		outputChannel := make(chan string)
+		outputChannel = make(chan string)
 		go func(outChan chan string, reader io.ReadCloser) {
 			defer reader.Close()
 			rd := bufio.NewReader(reader)

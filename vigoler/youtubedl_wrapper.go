@@ -21,6 +21,7 @@ type Format struct {
 	Description        string
 }
 type VideoUrl struct {
+	Name   string
 	url    string
 	IsLive bool
 }
@@ -82,7 +83,9 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 		defer async.wg.Done()
 		const URL_NAME = "\"webpage_url\": \""
 		const ALIVE_NAME = "\"is_live\": "
+		const TITLE_NAME = "\"title\": \""
 		const URL_NAME_LEN = len(URL_NAME)
+		const TITLE_NAME_LEN = len(TITLE_NAME)
 		var videos []VideoUrl
 		for s := range *output {
 			urlIndex := str.Index(s, URL_NAME)
@@ -95,8 +98,10 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 				if s[isAlive:isAlive+4] == "true" {
 					urlAlive = true
 				}
+				titleIndex := str.Index(s, TITLE_NAME)
 				videoUrl := s[urlIndex+URL_NAME_LEN : str.Index(s[urlIndex+URL_NAME_LEN:], "\"")+urlIndex+URL_NAME_LEN ]
-				videos = append(videos, VideoUrl{url: videoUrl, IsLive: urlAlive})
+				title := s[titleIndex+TITLE_NAME_LEN : str.Index(s[titleIndex+TITLE_NAME_LEN:], "\"")+titleIndex+TITLE_NAME_LEN]
+				videos = append(videos, VideoUrl{url: videoUrl, IsLive: urlAlive, Name: title})
 			} else {
 				fmt.Println(s) //TODO
 			}
