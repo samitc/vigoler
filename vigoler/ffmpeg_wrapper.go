@@ -75,13 +75,15 @@ func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output s
 			}
 			beforeDown := func(line string) bool { return line[:len(line)-2] == "Press [q] to stop, [?] for help" }
 			processData := func(line string) (time, size int) {
-				splits := strings.Split(line, "=")
-				sizeStr := splits[4]
-				numberEnd := strings.Index(sizeStr, "k")
-				numberStart := strings.LastIndex(sizeStr[:numberEnd], " ") + 1
-				size, _ = strconv.Atoi(sizeStr[numberStart:numberEnd])
-				timeStr := splits[5]
-				time = timeStringToInt(timeStr[6:8]) + 60*(timeStringToInt(timeStr[3:5])+60*timeStringToInt(timeStr[:2]))
+				if strings.Index(line, "frame") != -1 {
+					splits := strings.Split(line, "=")
+					sizeStr := splits[4]
+					numberEnd := strings.Index(sizeStr, "k")
+					numberStart := strings.LastIndex(sizeStr[:numberEnd], " ") + 1
+					size, _ = strconv.Atoi(sizeStr[numberStart:numberEnd])
+					timeStr := splits[5]
+					time = timeStringToInt(timeStr[6:8]) + 60*(timeStringToInt(timeStr[3:5])+60*timeStringToInt(timeStr[:2]))
+				}
 				return
 			}
 			rd := bufio.NewReader(reader)
