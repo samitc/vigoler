@@ -121,8 +121,8 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string) (*Asyn
 		return nil, errors.New("can not download live video") //TODO: make new error type
 	}
 	ctx := context.Background()
-	randName := fmt.Sprintf("%010d", youdown.random.Int())
-	output, err := youdown.app.runCommandChan(ctx, "-o", randName+"%(title)s.%(ext)s", "-f", format, url.url)
+	outputFileName := strconv.Itoa(youdown.random.Int())
+	output, err := youdown.app.runCommandChan(ctx, "-o", outputFileName, "-f", format, url.url)
 	if err != nil {
 		return nil, err
 	}
@@ -133,13 +133,17 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string) (*Asyn
 		defer async.wg.Done()
 		const DESTINATION = "Destination:"
 		var dest string
+		warn := ""
 		for s := range *output {
+			if -1 != str.Index(s, "ERROR") {
+				warn = warn + s + "\n"
+			}
 			destIndex := str.Index(s, DESTINATION)
 			if destIndex != -1 {
 				dest = s[destIndex+len(DESTINATION)+1 : len(s)-1]
 			}
 		}
-		async.setResult(&dest, nil, "")
+		async.setResult(&dest, nil, warn)
 	}(&async, &output)
 	return &async, nil
 }

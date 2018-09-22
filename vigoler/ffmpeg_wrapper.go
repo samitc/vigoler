@@ -3,7 +3,6 @@ package vigoler
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -91,7 +90,6 @@ func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output s
 			line, err := rd.ReadString(delim)
 			isFinish := false
 			for ; err == nil; line, err = rd.ReadString(delim) {
-				fmt.Println(line)
 				if !isFinish {
 					if delim == '\n' {
 						if beforeDown(line) {

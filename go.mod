@@ -1,1 +1,1 @@
-module vigoler
+module github.com/samitc/vigoler
