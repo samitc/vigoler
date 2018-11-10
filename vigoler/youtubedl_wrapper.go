@@ -29,6 +29,14 @@ type VideoUrl struct {
 	Ext    string
 	url    string
 }
+type BadFormatError struct {
+	Video  VideoUrl
+	Format string
+}
+
+func (e *BadFormatError) Error() string {
+	return fmt.Sprintf("Bad format %s for url %s", e.Format, e.Video.url)
+}
 
 func CreateYoutubeDlWrapper() YoutubeDlWrapper {
 	s1 := rand.NewSource(time.Now().UnixNano())
@@ -93,24 +101,30 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 		const EXT_NAME = "ext"
 		var videos []VideoUrl
 		warnOutput := ""
+		videoIndex := 0
 		for s := range *output {
 			errorIndex := str.Index(s, "ERROR")
 			warnIndex := str.Index(s, "WARNING")
 			if errorIndex != -1 || warnIndex != -1 {
-				warnOutput += s
+				warnOutput += "WARN IN VIDEO NUMBER: " + strconv.Itoa(videoIndex) + ". " + s
 			} else {
 				j := []byte(s)
 				var data interface{}
 				json.Unmarshal(j, &data)
-				dMap := data.(map[string]interface{})
-				var isAlive bool
-				if dMap[ALIVE_NAME] == nil {
-					isAlive = false
+				if data == nil {
+					warnOutput += "WARN IN VIDEO NUMBER: " + strconv.Itoa(videoIndex) + ". " + s
 				} else {
-					isAlive = dMap[ALIVE_NAME].(bool)
+					dMap := data.(map[string]interface{})
+					var isAlive bool
+					if dMap[ALIVE_NAME] == nil {
+						isAlive = false
+					} else {
+						isAlive = dMap[ALIVE_NAME].(bool)
+					}
+					videos = append(videos, VideoUrl{Ext: dMap[EXT_NAME].(string), url: dMap[URL_NAME].(string), Name: dMap[TITLE_NAME].(string), IsLive: isAlive})
 				}
-				videos = append(videos, VideoUrl{Ext: dMap[EXT_NAME].(string), url: dMap[URL_NAME].(string), Name: dMap[TITLE_NAME].(string), IsLive: isAlive})
 			}
+			videoIndex++
 		}
 		async.setResult(&videos, nil, warnOutput)
 	}(&async, &output)
@@ -129,22 +143,31 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string) (*Asyn
 	var wg sync.WaitGroup
 	wg.Add(1)
 	async := createAsyncWaitGroup(&wg)
-	go func(async *Async, output *<-chan string) {
+	go func(url VideoUrl, async *Async, output *<-chan string, format string) {
 		defer async.wg.Done()
 		const DESTINATION = "Destination:"
 		var dest string
 		warn := ""
+		var err error = nil
 		for s := range *output {
 			if -1 != str.Index(s, "ERROR") {
-				warn = warn + s + "\n"
+				if s[:len(s)-1] == "ERROR: requested format not available" { // s contain also \n
+					err = &BadFormatError{Video: url, Format: format}
+					break
+				} else {
+					if warn == "" {
+						warn += url.url + "\n"
+					}
+					warn = warn + s + "\n"
+				}
 			}
 			destIndex := str.Index(s, DESTINATION)
 			if destIndex != -1 {
 				dest = s[destIndex+len(DESTINATION)+1 : len(s)-1]
 			}
 		}
-		async.setResult(&dest, nil, warn)
-	}(&async, &output)
+		async.setResult(&dest, err, warn)
+	}(url, &async, &output, format)
 	return &async, nil
 }
 func (youdown *YoutubeDlWrapper) Download(url VideoUrl, format Format) (*Async, error) {
