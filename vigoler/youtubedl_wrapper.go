@@ -102,17 +102,19 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 		var videos []VideoUrl
 		warnOutput := ""
 		videoIndex := 0
+		preWarnIndex := -1
 		for s := range *output {
+			hasWarn := false
 			errorIndex := str.Index(s, "ERROR")
 			warnIndex := str.Index(s, "WARNING")
 			if errorIndex != -1 || warnIndex != -1 {
-				warnOutput += "WARN IN VIDEO NUMBER: " + strconv.Itoa(videoIndex) + ". " + s
+				hasWarn = true
 			} else {
 				j := []byte(s)
 				var data interface{}
 				json.Unmarshal(j, &data)
 				if data == nil {
-					warnOutput += "WARN IN VIDEO NUMBER: " + strconv.Itoa(videoIndex) + ". " + s
+					hasWarn = true
 				} else {
 					dMap := data.(map[string]interface{})
 					var isAlive bool
@@ -124,7 +126,17 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 					videos = append(videos, VideoUrl{Ext: dMap[EXT_NAME].(string), url: dMap[URL_NAME].(string), Name: dMap[TITLE_NAME].(string), IsLive: isAlive})
 				}
 			}
-			videoIndex++
+			if hasWarn {
+				warnVideoIndex := videoIndex
+				if preWarnIndex != -1 {
+					warnVideoIndex -= 1
+				}
+				warnOutput += "WARN IN VIDEO NUMBER: " + strconv.Itoa(warnVideoIndex) + ". " + s
+			}
+			if !hasWarn || preWarnIndex == -1 {
+				videoIndex++
+			}
+			preWarnIndex = warnIndex
 		}
 		async.setResult(&videos, nil, warnOutput)
 	}(&async, &output)
