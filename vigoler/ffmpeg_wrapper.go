@@ -30,11 +30,26 @@ func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 		finalArgs = append(finalArgs, "-i", i)
 	}
 	finalArgs = append(finalArgs, "-c", "copy", output)
-	wait, err := ff.app.runCommandWait(context.Background(), finalArgs...)
+	cOutput, err := ff.app.runCommandChan(context.Background(), finalArgs...)
 	if err != nil {
 		return nil, err
 	}
-	async := createAsyncWaitable(wait)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	async := createAsyncWaitGroup(&wg)
+	go func(async *Async, fileOutput string, output *<-chan string) {
+		warn := ""
+		defer async.wg.Done()
+		for s := range *output {
+			if strings.Contains(s, "[") {
+				warn += s
+			}
+		}
+		if warn != "" {
+			warn = "WARNING WHEN MERGE " + fileOutput + ":" + warn
+		}
+		async.setResult(nil, nil, warn)
+	}(&async, output, &cOutput)
 	return &async, nil
 }
 func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output string) (*Async, error) {
