@@ -16,10 +16,10 @@ type WaitAble interface {
 func createAsyncWaitable(waitable WaitAble) Async {
 	return Async{wa: waitable}
 }
-func createAsyncWaitGroup(wg *sync.WaitGroup) Async {
+func CreateAsyncWaitGroup(wg *sync.WaitGroup) Async {
 	return Async{wg: wg}
 }
-func (async *Async) setResult(result interface{}, err error, warningOutput string) {
+func (async *Async) SetResult(result interface{}, err error, warningOutput string) {
 	async.Result = result
 	async.Error = err
 	async.WarningsOutput = warningOutput

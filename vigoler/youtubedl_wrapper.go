@@ -52,7 +52,7 @@ func (youdown *YoutubeDlWrapper) GetFormats(url VideoUrl) (*Async, error) {
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := createAsyncWaitGroup(&wg)
+	async := CreateAsyncWaitGroup(&wg)
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
 		isHeader := true
@@ -80,7 +80,7 @@ func (youdown *YoutubeDlWrapper) GetFormats(url VideoUrl) (*Async, error) {
 				formats = append(formats, Format{Number: num, FileFormat: str.Trim(s[extensionStart:resolutionStart], " "), Resolution: str.Trim(s[resolutionStart:noteStart], " "), hasVideo: hasVideo, hasAudio: hasAudio, Description: s})
 			}
 		}
-		async.setResult(&formats, nil, "")
+		async.SetResult(&formats, nil, "")
 	}(&async, &output)
 	return &async, nil
 }
@@ -92,7 +92,7 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := createAsyncWaitGroup(&wg)
+	async := CreateAsyncWaitGroup(&wg)
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
 		const URL_NAME = "webpage_url"
@@ -138,7 +138,7 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 			}
 			preWarnIndex = warnIndex
 		}
-		async.setResult(&videos, nil, warnOutput)
+		async.SetResult(&videos, nil, warnOutput)
 	}(&async, &output)
 	return &async, nil
 }
@@ -154,7 +154,7 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string) (*Asyn
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := createAsyncWaitGroup(&wg)
+	async := CreateAsyncWaitGroup(&wg)
 	go func(url VideoUrl, async *Async, output *<-chan string, format string) {
 		defer async.wg.Done()
 		const DESTINATION = "Destination:"
@@ -178,7 +178,7 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string) (*Asyn
 				dest = s[destIndex+len(DESTINATION)+1 : len(s)-1]
 			}
 		}
-		async.setResult(&dest, err, warn)
+		async.SetResult(&dest, err, warn)
 	}(url, &async, &output, format)
 	return &async, nil
 }
@@ -202,14 +202,14 @@ func (youdown *YoutubeDlWrapper) getRealVideoUrl(url VideoUrl, format string) (*
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := createAsyncWaitGroup(&wg)
+	async := CreateAsyncWaitGroup(&wg)
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
 		for s := range *output {
 			if async.Result != nil {
 				fmt.Println(s) //TODO: return error - should not happen
 			}
-			async.setResult(&s, nil, "")
+			async.SetResult(&s, nil, "")
 		}
 	}(&async, &output)
 	return &async, nil

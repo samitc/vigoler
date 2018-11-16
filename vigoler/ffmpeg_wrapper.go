@@ -36,7 +36,7 @@ func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := createAsyncWaitGroup(&wg)
+	async := CreateAsyncWaitGroup(&wg)
 	go func(async *Async, fileOutput string, output *<-chan string) {
 		warn := ""
 		defer async.wg.Done()
@@ -48,7 +48,7 @@ func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 		if warn != "" {
 			warn = "WARNING WHEN MERGE " + fileOutput + ":" + warn
 		}
-		async.setResult(nil, nil, warn)
+		async.SetResult(nil, nil, warn)
 	}(&async, output, &cOutput)
 	return &async, nil
 }
@@ -80,7 +80,7 @@ func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output s
 	} else {
 		var wg sync.WaitGroup
 		wg.Add(1)
-		async = createAsyncWaitGroup(&wg)
+		async = CreateAsyncWaitGroup(&wg)
 		go func(async *Async, reader io.ReadCloser, setting *DownloadSettings) {
 			defer async.wg.Done()
 			defer reader.Close()
