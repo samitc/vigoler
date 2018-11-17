@@ -17,11 +17,13 @@ type YoutubeDlWrapper struct {
 	random rand.Rand
 }
 type Format struct {
+	format             string
 	Number             int
 	FileFormat         string
 	Resolution         string
 	Description        string
 	hasVideo, hasAudio bool
+	MaxFileSizeInMb    int
 }
 type VideoUrl struct {
 	Name   string
@@ -37,7 +39,15 @@ type BadFormatError struct {
 func (e *BadFormatError) Error() string {
 	return fmt.Sprintf("Bad format %s for url %s", e.Format, e.Video.url)
 }
-
+func fillFormat(format Format) Format {
+	if format.format == "" {
+		format.format = strconv.Itoa(format.Number)
+	}
+	if format.MaxFileSizeInMb > 0 {
+		format.format += "[filesize<" + strconv.Itoa(format.MaxFileSizeInMb) + "m]"
+	}
+	return format
+}
 func CreateYoutubeDlWrapper() YoutubeDlWrapper {
 	s1 := rand.NewSource(time.Now().UnixNano())
 	r1 := rand.New(s1)
@@ -183,16 +193,16 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string) (*Asyn
 	return &async, nil
 }
 func (youdown *YoutubeDlWrapper) Download(url VideoUrl, format Format) (*Async, error) {
-	return youdown.downloadUrl(url, strconv.Itoa(format.Number))
+	return youdown.downloadUrl(url, fillFormat(format).format)
 }
-func (youdown *YoutubeDlWrapper) DownloadBestAudio(url VideoUrl) (*Async, error) {
-	return youdown.downloadUrl(url, "bestaudio")
+func CreateBestAudioFormat() Format {
+	return Format{format: "bestaudio"}
 }
-func (youdown *YoutubeDlWrapper) DownloadBestVideo(url VideoUrl) (*Async, error) {
-	return youdown.downloadUrl(url, "bestvideo")
+func CreateBestVideoFormat() Format {
+	return Format{format: "bestvideo"}
 }
-func (youdown *YoutubeDlWrapper) DownloadBest(url VideoUrl) (*Async, error) {
-	return youdown.downloadUrl(url, "best")
+func CreateBestFormat() Format {
+	return Format{format: "best"}
 }
 func (youdown *YoutubeDlWrapper) getRealVideoUrl(url VideoUrl, format string) (*Async, error) {
 	ctx := context.Background()
@@ -215,14 +225,5 @@ func (youdown *YoutubeDlWrapper) getRealVideoUrl(url VideoUrl, format string) (*
 	return &async, nil
 }
 func (youdown *YoutubeDlWrapper) GetRealVideoUrl(url VideoUrl, format Format) (*Async, error) {
-	return youdown.getRealVideoUrl(url, strconv.Itoa(format.Number))
-}
-func (youdown *YoutubeDlWrapper) GetRealVideoUrlBestAudio(url VideoUrl) (*Async, error) {
-	return youdown.getRealVideoUrl(url, "bestaudio")
-}
-func (youdown *YoutubeDlWrapper) GetRealVideoUrlBestVideo(url VideoUrl) (*Async, error) {
-	return youdown.getRealVideoUrl(url, "bestvideo")
-}
-func (youdown *YoutubeDlWrapper) GetRealVideoUrlBest(url VideoUrl) (*Async, error) {
-	return youdown.getRealVideoUrl(url, "best")
+	return youdown.getRealVideoUrl(url, fillFormat(format).format)
 }

@@ -13,6 +13,13 @@ type VideoUtils struct {
 	Ffmpeg  *vigoler.FFmpegWrapper
 }
 
+func validateFileName(fileName string) string {
+	notAllowCh := []string{`\`, `/`, `:`, `|`, `?`, `"`, `*`, `<`, `>`}
+	for _, ch := range notAllowCh {
+		fileName = strings.Replace(fileName, ch, "", -1)
+	}
+	return fileName
+}
 func addIndexToFileName(name string) string {
 	lastDot := strings.LastIndex(name, ".")
 	preLastDot := strings.LastIndex(name[:lastDot], ".")
@@ -63,8 +70,8 @@ func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb,
 	return &async, nil
 }
 func (vu *VideoUtils) DownloadBestAndMerge(url vigoler.VideoUrl, output string) (*vigoler.Async, error) {
-	video, vErr := vu.Youtube.DownloadBestVideo(url)
-	audio, aErr := vu.Youtube.DownloadBestAudio(url)
+	video, vErr := vu.Youtube.Download(url, vigoler.CreateBestVideoFormat())
+	audio, aErr := vu.Youtube.Download(url, vigoler.CreateBestAudioFormat())
 	if vErr != nil || aErr != nil {
 		if vErr != nil {
 			return nil, vErr
@@ -111,10 +118,10 @@ func (vu *VideoUtils) DownloadBestAndMerge(url vigoler.VideoUrl, output string) 
 	}(video, audio, output, url)
 	return &async, nil
 }
-func (vu *VideoUtils) DownloadBest(url vigoler.VideoUrl, output string) (*vigoler.Async, error) {
+func (vu *VideoUtils) download(url vigoler.VideoUrl, output string, format vigoler.Format) (*vigoler.Async, error) {
 	var wg sync.WaitGroup
 	async := vigoler.CreateAsyncWaitGroup(&wg)
-	yAsync, err := vu.Youtube.DownloadBest(url)
+	yAsync, err := vu.Youtube.Download(url, format)
 	if err != nil {
 		return nil, err
 	} else {
@@ -131,4 +138,12 @@ func (vu *VideoUtils) DownloadBest(url vigoler.VideoUrl, output string) (*vigole
 		}()
 	}
 	return &async, nil
+}
+func (vu *VideoUtils) DownloadBest(url vigoler.VideoUrl, output string) (*vigoler.Async, error) {
+	return vu.download(url, output, vigoler.CreateBestFormat())
+}
+func (vu *VideoUtils) DownloadBestMaxSize(url vigoler.VideoUrl, output string, sizeInMb int) (*vigoler.Async, error) {
+	format := vigoler.CreateBestFormat()
+	format.MaxFileSizeInMb = sizeInMb
+	return vu.download(url, output, format)
 }

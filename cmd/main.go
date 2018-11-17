@@ -43,13 +43,6 @@ func getAsyncData(async *Async, warnPrefix string) interface{} {
 	}
 	return i
 }
-func validateFileName(fileName string) string {
-	notAllowCh := []string{`\`, `/`, `:`, `|`, `?`, `"`, `*`, `<`, `>`}
-	for _, ch := range notAllowCh {
-		fileName = strings.Replace(fileName, ch, "", -1)
-	}
-	return fileName
-}
 func downloadBestAndMerge(url VideoUrl, videoUtils *VideoUtils, outputFormat string, directory string, wg *sync.WaitGroup, sem *semaphore) (*Async, string) {
 	var format string
 	if outputFormat == "" {
@@ -70,7 +63,7 @@ func liveDownload(videos <-chan outputVideo, videoUtils *VideoUtils, wg *sync.Wa
 	var pendingAsync []*Async
 	var filesName []string
 	for video := range videos {
-		async, err := videoUtils.Youtube.GetRealVideoUrlBest(video.video)
+		async, err := videoUtils.Youtube.GetRealVideoUrl(video.video, CreateBestFormat())
 		if err != nil {
 			fmt.Println(err)
 		} else {
