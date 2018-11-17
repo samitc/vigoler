@@ -76,20 +76,24 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 	if vid == nil {
 		w.WriteHeader(http.StatusNotFound)
 	} else {
-		size, err := validateMaxFileSize(os.Getenv("VIGOLER_MAX_FILE_SIZE"))
-		if err != nil {
-			fmt.Println(err)
-			w.WriteHeader(http.StatusInternalServerError)
+		if vid.async != nil {
+			json.NewEncoder(w).Encode(vid)
 		} else {
-			format := vigoler.CreateBestFormat()
-			format.MaxFileSizeInMb = size
-			vid.updateTime = time.Now()
-			vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, validateFileName(vid.Name+"."+vid.Ext), size)
+			size, err := validateMaxFileSize(os.Getenv("VIGOLER_MAX_FILE_SIZE"))
 			if err != nil {
 				fmt.Println(err)
 				w.WriteHeader(http.StatusInternalServerError)
+			} else {
+				format := vigoler.CreateBestFormat()
+				format.MaxFileSizeInMb = size
+				vid.updateTime = time.Now()
+				vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, validateFileName(vid.Name+"."+vid.Ext), size)
+				if err != nil {
+					fmt.Println(err)
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+				json.NewEncoder(w).Encode(vid)
 			}
-			json.NewEncoder(w).Encode(vid)
 		}
 	}
 }
