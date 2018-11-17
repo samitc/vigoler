@@ -12,19 +12,37 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 )
 
 type video struct {
-	ID       string           `json:"id"`
-	Name     string           `json:"name"`
-	Ext      string           `json:"ext"`
-	videoUrl vigoler.VideoUrl `json:"-"`
-	async    *vigoler.Async   `json:"-"`
+	ID         string           `json:"id"`
+	Name       string           `json:"name"`
+	Ext        string           `json:"ext"`
+	videoUrl   vigoler.VideoUrl `json:"-"`
+	async      *vigoler.Async   `json:"-"`
+	updateTime time.Time        `json:"-"`
 }
 
 var videosMap map[string]*video
 var videoUtils VideoUtils
 
+func serverCleaner() {
+	maxTimeDiff, _ := strconv.Atoi(os.Getenv("VIGOLER_MAX_TIME_DIFF"))
+	curTime := time.Now()
+	for k, v := range videosMap {
+		if (int)(curTime.Sub(v.updateTime).Seconds()) > maxTimeDiff {
+			err := os.Remove(validateFileName(v.Name + "." + v.Ext))
+			if err != nil && !os.IsNotExist(err) {
+				fmt.Println(err)
+			}
+			delete(videosMap, k)
+		}
+	}
+}
+func createId() string {
+	return ksuid.New().String()
+}
 func validateMaxFileSize(fileSize string) (int, error) {
 	return strconv.Atoi(fileSize)
 
@@ -33,24 +51,6 @@ func readBody(r *http.Request) string {
 	buf := new(bytes.Buffer)
 	buf.ReadFrom(r.Body)
 	return buf.String()
-}
-func downloadVideo(w http.ResponseWriter, r *http.Request) {
-	size, err := validateMaxFileSize(os.Getenv("VIGOLER_MAX_FILE_SIZE"))
-	if err != nil {
-		fmt.Println(err)
-		w.WriteHeader(http.StatusInternalServerError)
-	} else {
-		format := vigoler.CreateBestFormat()
-		format.MaxFileSizeInMb = size
-		vars := mux.Vars(r)
-		vid := videosMap[vars["ID"]]
-		vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, validateFileName(vid.Name+"."+vid.Ext), size)
-		if err != nil {
-			fmt.Println(err)
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-		json.NewEncoder(w).Encode(vid)
-	}
 }
 func createVideos(url string) ([]video, error) {
 	async, err := videoUtils.Youtube.GetUrls(url)
@@ -66,9 +66,32 @@ func createVideos(url string) ([]video, error) {
 	}
 	videos := make([]video, 0)
 	for _, url := range *urls.(*[]vigoler.VideoUrl) {
-		videos = append(videos, video{videoUrl: url, ID: ksuid.New().String(), Name: url.Name, Ext: url.Ext})
+		videos = append(videos, video{videoUrl: url, ID: createId(), Name: url.Name, Ext: url.Ext})
 	}
 	return videos, nil
+}
+func downloadVideo(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	vid := videosMap[vars["ID"]]
+	if vid == nil {
+		w.WriteHeader(http.StatusNotFound)
+	} else {
+		size, err := validateMaxFileSize(os.Getenv("VIGOLER_MAX_FILE_SIZE"))
+		if err != nil {
+			fmt.Println(err)
+			w.WriteHeader(http.StatusInternalServerError)
+		} else {
+			format := vigoler.CreateBestFormat()
+			format.MaxFileSizeInMb = size
+			vid.updateTime = time.Now()
+			vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, validateFileName(vid.Name+"."+vid.Ext), size)
+			if err != nil {
+				fmt.Println(err)
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+			json.NewEncoder(w).Encode(vid)
+		}
+	}
 }
 func process(w http.ResponseWriter, r *http.Request) {
 	youtubeUrl := readBody(r)
@@ -76,8 +99,10 @@ func process(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		for _, vid := range videos {
-			videosMap[vid.ID] = &vid
+		curTime := time.Now()
+		for i := 0; i < len(videos); i++ {
+			videos[i].updateTime = curTime
+			videosMap[videos[i].ID] = &videos[i]
 		}
 	}
 	json.NewEncoder(w).Encode(videos)
@@ -98,10 +123,12 @@ func download(w http.ResponseWriter, r *http.Request) {
 		} else {
 			fileName := validateFileName(vid.Name + "." + vid.Ext)
 			file, err := os.Open(fileName)
+			defer file.Close()
 			if err != nil {
 				fmt.Println(err)
 				w.WriteHeader(http.StatusInternalServerError)
 			} else {
+				vid.updateTime = time.Now()
 				w.Header().Set("Content-Disposition", "attachment; filename="+fileName)
 				w.Header().Set("Content-Type", r.Header.Get("Content-Type"))
 				fs, err := file.Stat()
@@ -128,5 +155,13 @@ func main() {
 	router.HandleFunc("/videos", process).Methods("GET")
 	router.HandleFunc("/videos/{ID}", downloadVideo).Methods("POST")
 	router.HandleFunc("/videos/{ID}", download).Methods("GET")
+	go func() {
+		for true {
+			seconds, _ := strconv.Atoi(os.Getenv("VIGOLER_CLEANER_PERIODIC"))
+			dur := time.Second * time.Duration(seconds)
+			time.Sleep(dur)
+			serverCleaner()
+		}
+	}()
 	log.Fatal(http.ListenAndServe(":8000", router))
 }
