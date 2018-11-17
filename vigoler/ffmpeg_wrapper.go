@@ -24,6 +24,9 @@ type DownloadSettings struct {
 func CreateFfmpegWrapper() FFmpegWrapper {
 	return FFmpegWrapper{app: externalApp{"ffmpeg"}}
 }
+func beforeStartWork(line string) bool {
+	return line[:len(line)-2] == "Press [q] to stop, [?] for help"
+}
 func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 	finalArgs := make([]string, 0, len(input)*2+3)
 	for _, i := range input {
@@ -42,7 +45,9 @@ func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 		defer async.wg.Done()
 		for s := range *output {
 			if strings.Contains(s, "[") {
-				warn += s
+				if !beforeStartWork(s) && strings.Index(s, "Stream #0") == -1 {
+					warn += s
+				}
 			}
 		}
 		if warn != "" {
@@ -87,7 +92,6 @@ func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output s
 			timeStringToInt := func(s string) int {
 				return int((s[0]-'0')*10 + s[1] - '0')
 			}
-			beforeDown := func(line string) bool { return line[:len(line)-2] == "Press [q] to stop, [?] for help" }
 			processData := func(line string) (time, size int) {
 				if strings.Index(line, "frame") != -1 {
 					splits := strings.Split(line, "=")
@@ -107,7 +111,7 @@ func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output s
 			for ; err == nil; line, err = rd.ReadString(delim) {
 				if !isFinish {
 					if delim == '\n' {
-						if beforeDown(line) {
+						if beforeStartWork(line) {
 							delim = '\r'
 						}
 					} else {
