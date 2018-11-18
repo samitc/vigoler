@@ -12,7 +12,43 @@ type VideoUtils struct {
 	Youtube *vigoler.YoutubeDlWrapper
 	Ffmpeg  *vigoler.FFmpegWrapper
 }
+type multipleWaitAble struct {
+	waitAbles []*vigoler.Async
+	isStopped bool
+}
 
+func (mwa *multipleWaitAble) add(async *vigoler.Async) {
+	mwa.waitAbles = append(mwa.waitAbles, async)
+}
+func (mwa *multipleWaitAble) remove(async *vigoler.Async) {
+	waitAbleLen := len(mwa.waitAbles) - 1
+	for i, v := range mwa.waitAbles {
+		if v == async {
+			mwa.waitAbles[i] = mwa.waitAbles[waitAbleLen]
+			break
+		}
+	}
+	mwa.waitAbles = mwa.waitAbles[:waitAbleLen]
+}
+func (mwa *multipleWaitAble) Wait() error {
+	for _, wa := range mwa.waitAbles {
+		_, err, _ := wa.Get()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (mwa *multipleWaitAble) Stop() error {
+	for _, wa := range mwa.waitAbles {
+		err := wa.Stop()
+		if err != nil {
+			return err
+		}
+	}
+	mwa.isStopped = true
+	return nil
+}
 func validateFileName(fileName string) string {
 	notAllowCh := []string{`\`, `/`, `:`, `|`, `?`, `"`, `*`, `<`, `>`}
 	for _, ch := range notAllowCh {
@@ -37,10 +73,12 @@ func addIndexToFileName(name string) string {
 }
 func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb, sizeSplitThreshold, maxTimeInSec, timeSplitThreshold int) (*vigoler.Async, error) {
 	var wg sync.WaitGroup
-	async := vigoler.CreateAsyncWaitGroup(&wg)
+	var wa multipleWaitAble
+	async := vigoler.CreateAsyncWaitGroup(&wg, &wa)
 	waitForVideoToDownload := func(fAsync *vigoler.Async) {
 		defer wg.Done()
 		_, err, warn := fAsync.Get()
+		wa.remove(fAsync)
 		if err != nil {
 			async.SetResult(nil, err, warn)
 		} else {
@@ -65,6 +103,7 @@ func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb,
 		return nil, err
 	} else {
 		wg.Add(1)
+		wa.add(fAsync)
 		go waitForVideoToDownload(fAsync)
 	}
 	return &async, nil
@@ -80,39 +119,53 @@ func (vu *VideoUtils) DownloadBestAndMerge(url vigoler.VideoUrl, output string) 
 		}
 	}
 	var wg sync.WaitGroup
-	async := vigoler.CreateAsyncWaitGroup(&wg)
+	var wa multipleWaitAble
+	wa.isStopped = false
+	async := vigoler.CreateAsyncWaitGroup(&wg, &wa)
+	wa.add(video)
+	wa.add(audio)
 	wg.Add(1)
 	go func(video, audio *vigoler.Async, output string, url vigoler.VideoUrl) {
 		defer wg.Done()
 		videoPath, vErr, vWarn := video.Get()
+		wa.remove(video)
 		audioPath, aErr, aWarn := audio.Get()
+		wa.remove(audio)
 		if vErr != nil || aErr != nil {
 			err := aErr
 			if vErr != nil {
 				err = vErr
 			}
 			if _, ok := err.(*vigoler.BadFormatError); ok {
-				dAsync, err := vu.DownloadBest(url, output)
-				if err != nil {
-					async.SetResult(nil, err, "")
-				} else {
-					_, err, warn := dAsync.Get()
-					async.SetResult(nil, err, warn)
+				if !wa.isStopped {
+					dAsync, err := vu.DownloadBest(url, output)
+					if err != nil {
+						async.SetResult(nil, err, "")
+					} else {
+						wa.add(dAsync)
+						_, err, warn := dAsync.Get()
+						wa.remove(dAsync)
+						async.SetResult(nil, err, warn)
+					}
 				}
 			} else {
 				async.SetResult(nil, err, vWarn+aWarn)
 			}
 		} else {
-			merge, err := vu.Ffmpeg.Merge(output, *videoPath.(*string), *audioPath.(*string))
-			if err != nil {
-				async.SetResult(nil, err, "")
-			} else {
-				_, err, warn := merge.Get()
-				async.SetResult(nil, err, warn)
-			}
-			if _, err := os.Stat(output); err == nil || os.IsExist(err) {
-				os.Remove(*videoPath.(*string))
-				os.Remove(*audioPath.(*string))
+			if !wa.isStopped {
+				merge, err := vu.Ffmpeg.Merge(output, *videoPath.(*string), *audioPath.(*string))
+				if err != nil {
+					async.SetResult(nil, err, "")
+				} else {
+					wa.add(merge)
+					_, err, warn := merge.Get()
+					wa.remove(merge)
+					async.SetResult(nil, err, warn)
+				}
+				if _, err := os.Stat(output); err == nil || os.IsExist(err) {
+					os.Remove(*videoPath.(*string))
+					os.Remove(*audioPath.(*string))
+				}
 			}
 		}
 	}(video, audio, output, url)
@@ -120,8 +173,8 @@ func (vu *VideoUtils) DownloadBestAndMerge(url vigoler.VideoUrl, output string) 
 }
 func (vu *VideoUtils) download(url vigoler.VideoUrl, output string, format vigoler.Format) (*vigoler.Async, error) {
 	var wg sync.WaitGroup
-	async := vigoler.CreateAsyncWaitGroup(&wg)
 	yAsync, err := vu.Youtube.Download(url, format)
+	async := vigoler.CreateAsyncFromAsyncAsWaitAble(&wg, yAsync)
 	if err != nil {
 		return nil, err
 	} else {

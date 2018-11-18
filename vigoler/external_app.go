@@ -11,7 +11,16 @@ import (
 type externalApp struct {
 	appLocation string
 }
+type commandWaitAble struct {
+	cmd *exec.Cmd
+}
 
+func (cwa *commandWaitAble) Wait() error {
+	return cwa.cmd.Wait()
+}
+func (cwa *commandWaitAble) Stop() error {
+	return cwa.cmd.Process.Kill()
+}
 func (external *externalApp) runCommand(ctx context.Context, createChan bool, closeReader bool, arg ...string) (WaitAble, io.ReadCloser, <-chan string, error) {
 	cmd := exec.CommandContext(ctx, external.appLocation, arg...)
 	var outputChannel chan string = nil
@@ -46,13 +55,13 @@ func (external *externalApp) runCommand(ctx context.Context, createChan bool, cl
 	if err := cmd.Start(); err != nil {
 		return nil, nil, nil, err
 	}
-	return cmd, streamReader, outputChannel, nil
+	return &commandWaitAble{cmd: cmd}, streamReader, outputChannel, nil
 }
 func (external *externalApp) runCommandWait(ctx context.Context, arg ...string) (WaitAble, error) {
 	wait, _, _, err := external.runCommand(ctx, false, true, arg...)
 	return wait, err
 }
-func (external *externalApp) runCommandChan(ctx context.Context, arg ...string) (<-chan string, error) {
-	_, _, channel, err := external.runCommand(ctx, true, true, arg...)
-	return channel, err
+func (external *externalApp) runCommandChan(ctx context.Context, arg ...string) (WaitAble, <-chan string, error) {
+	waitAble, _, channel, err := external.runCommand(ctx, true, true, arg...)
+	return waitAble, channel, err
 }

@@ -32,6 +32,12 @@ func serverCleaner() {
 	curTime := time.Now()
 	for k, v := range videosMap {
 		if (int)(curTime.Sub(v.updateTime).Seconds()) > maxTimeDiff {
+			if v.async != nil {
+				err := v.async.Stop()
+				if err != nil {
+					fmt.Println(err)
+				}
+			}
 			err := os.Remove(validateFileName(v.Name + "." + v.Ext))
 			if err != nil && !os.IsNotExist(err) {
 				fmt.Println(err)

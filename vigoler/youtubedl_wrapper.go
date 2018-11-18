@@ -56,13 +56,13 @@ func CreateYoutubeDlWrapper() YoutubeDlWrapper {
 }
 func (youdown *YoutubeDlWrapper) GetFormats(url VideoUrl) (*Async, error) {
 	ctx := context.Background()
-	output, err := youdown.app.runCommandChan(ctx, "-F", url.url)
+	wa, output, err := youdown.app.runCommandChan(ctx, "-F", url.url)
 	if err != nil {
 		return nil, err
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := CreateAsyncWaitGroup(&wg)
+	async := CreateAsyncWaitGroup(&wg, wa)
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
 		isHeader := true
@@ -96,13 +96,13 @@ func (youdown *YoutubeDlWrapper) GetFormats(url VideoUrl) (*Async, error) {
 }
 func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 	ctx := context.Background()
-	output, err := youdown.app.runCommandChan(ctx, "-i", "-j", url)
+	wa, output, err := youdown.app.runCommandChan(ctx, "-i", "-j", url)
 	if err != nil {
 		return nil, err
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := CreateAsyncWaitGroup(&wg)
+	async := CreateAsyncWaitGroup(&wg, wa)
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
 		const URL_NAME = "webpage_url"
@@ -158,13 +158,13 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string) (*Asyn
 	}
 	ctx := context.Background()
 	outputFileName := strconv.Itoa(youdown.random.Int())
-	output, err := youdown.app.runCommandChan(ctx, "-o", outputFileName, "-f", format, url.url)
+	wa, output, err := youdown.app.runCommandChan(ctx, "-o", outputFileName, "-f", format, url.url)
 	if err != nil {
 		return nil, err
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := CreateAsyncWaitGroup(&wg)
+	async := CreateAsyncWaitGroup(&wg, wa)
 	go func(url VideoUrl, async *Async, output *<-chan string, format string) {
 		defer async.wg.Done()
 		const DESTINATION = "Destination:"
@@ -206,13 +206,13 @@ func CreateBestFormat() Format {
 }
 func (youdown *YoutubeDlWrapper) getRealVideoUrl(url VideoUrl, format string) (*Async, error) {
 	ctx := context.Background()
-	output, err := youdown.app.runCommandChan(ctx, "-g", "-f", format, url.url)
+	wa, output, err := youdown.app.runCommandChan(ctx, "-g", "-f", format, url.url)
 	if err != nil {
 		return nil, err
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := CreateAsyncWaitGroup(&wg)
+	async := CreateAsyncWaitGroup(&wg, wa)
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
 		for s := range *output {

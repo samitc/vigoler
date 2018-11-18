@@ -12,13 +12,17 @@ type Async struct {
 }
 type WaitAble interface {
 	Wait() error
+	Stop() error
 }
 
-func createAsyncWaitable(waitable WaitAble) Async {
-	return Async{wa: waitable, isFinish: false}
+func createAsyncWaitAble(waitAble WaitAble) Async {
+	return Async{wa: waitAble, isFinish: false}
 }
-func CreateAsyncWaitGroup(wg *sync.WaitGroup) Async {
-	return Async{wg: wg, isFinish: false}
+func CreateAsyncWaitGroup(wg *sync.WaitGroup, wa WaitAble) Async {
+	return Async{wg: wg, wa: wa, isFinish: false}
+}
+func CreateAsyncFromAsyncAsWaitAble(wg *sync.WaitGroup, async *Async) Async {
+	return Async{wg: wg, wa: async.wa, isFinish: false}
 }
 func (async *Async) SetResult(result interface{}, err error, warningOutput string) {
 	async.Result = result
@@ -26,8 +30,11 @@ func (async *Async) SetResult(result interface{}, err error, warningOutput strin
 	async.WarningsOutput = warningOutput
 	async.isFinish = true
 }
-func (async *Async) Stop() {
-	panic("Not implement") //TODO
+func (async *Async) Stop() error {
+	if async.wa != nil {
+		return async.wa.Stop()
+	}
+	return nil
 }
 func (async *Async) Get() (interface{}, error, string) {
 	if async.wg != nil {
