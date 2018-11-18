@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"strconv"
 	str "strings"
 	"sync"
@@ -187,6 +189,17 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string) (*Asyn
 			if destIndex != -1 {
 				dest = s[destIndex+len(DESTINATION)+1 : len(s)-1]
 			}
+		}
+		if async.isStopped {
+			files, err := filepath.Glob(dest + "*")
+			if err != nil {
+				fmt.Println(err)
+			} else {
+				for _, f := range files {
+					os.Remove(f)
+				}
+			}
+			os.Remove(dest)
 		}
 		async.SetResult(&dest, err, warn)
 	}(url, &async, &output, format)
