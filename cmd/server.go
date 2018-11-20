@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/samitc/vigoler/vigoler"
 	"github.com/segmentio/ksuid"
@@ -103,6 +104,14 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+func checkIfVideoExist(vid *video) *string {
+	for k, v := range videosMap {
+		if v.Name == vid.Name && v.Ext == vid.Ext {
+			return &k
+		}
+	}
+	return nil
+}
 func process(w http.ResponseWriter, r *http.Request) {
 	youtubeUrl := readBody(r)
 	videos, err := createVideos(youtubeUrl)
@@ -111,6 +120,10 @@ func process(w http.ResponseWriter, r *http.Request) {
 	} else {
 		curTime := time.Now()
 		for i := 0; i < len(videos); i++ {
+			key := checkIfVideoExist(&videos[i])
+			if key != nil {
+				videos[i].ID = *key
+			}
 			videos[i].updateTime = curTime
 			videosMap[videos[i].ID] = &videos[i]
 		}
@@ -162,7 +175,7 @@ func main() {
 	videoUtils = VideoUtils{Youtube: &you, Ffmpeg: &ff}
 	videosMap = make(map[string]*video)
 	router := mux.NewRouter()
-	router.HandleFunc("/videos", process).Methods("GET")
+	router.HandleFunc("/videos", process).Methods("POST")
 	router.HandleFunc("/videos/{ID}", downloadVideo).Methods("POST")
 	router.HandleFunc("/videos/{ID}", download).Methods("GET")
 	go func() {
@@ -173,5 +186,6 @@ func main() {
 			serverCleaner()
 		}
 	}()
-	log.Fatal(http.ListenAndServe(":8000", router))
+	corsObj := handlers.AllowedOrigins([]string{os.Getenv("VIGOLER_ALLOW_ORIGIN")})
+	log.Fatal(http.ListenAndServe(":8000", handlers.CORS(corsObj)(router)))
 }
