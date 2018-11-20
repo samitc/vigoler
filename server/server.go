@@ -26,7 +26,7 @@ type video struct {
 }
 
 var videosMap map[string]*video
-var videoUtils VideoUtils
+var videoUtils vigoler.VideoUtils
 
 func serverCleaner() {
 	maxTimeDiff, _ := strconv.Atoi(os.Getenv("VIGOLER_MAX_TIME_DIFF"))
@@ -39,7 +39,7 @@ func serverCleaner() {
 					fmt.Println(err)
 				}
 			}
-			err := os.Remove(validateFileName(v.Name + "." + v.Ext))
+			err := os.Remove(vigoler.ValidateFileName(v.Name + "." + v.Ext))
 			if err != nil && !os.IsNotExist(err) {
 				fmt.Println(err)
 			}
@@ -94,7 +94,7 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 				format := vigoler.CreateBestFormat()
 				format.MaxFileSizeInMb = size
 				vid.updateTime = time.Now()
-				vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, validateFileName(vid.Name+"."+vid.Ext), size)
+				vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext), size)
 				if err != nil {
 					fmt.Println(err)
 					w.WriteHeader(http.StatusInternalServerError)
@@ -144,7 +144,7 @@ func download(w http.ResponseWriter, r *http.Request) {
 			fmt.Println(err)
 			w.WriteHeader(http.StatusInternalServerError)
 		} else {
-			fileName := validateFileName(vid.Name + "." + vid.Ext)
+			fileName := vigoler.ValidateFileName(vid.Name + "." + vid.Ext)
 			file, err := os.Open(fileName)
 			defer file.Close()
 			if err != nil {
@@ -172,7 +172,7 @@ func download(w http.ResponseWriter, r *http.Request) {
 func main() {
 	you := vigoler.CreateYoutubeDlWrapper()
 	ff := vigoler.CreateFfmpegWrapper()
-	videoUtils = VideoUtils{Youtube: &you, Ffmpeg: &ff}
+	videoUtils = vigoler.VideoUtils{Youtube: &you, Ffmpeg: &ff}
 	videosMap = make(map[string]*video)
 	router := mux.NewRouter()
 	router.HandleFunc("/videos", process).Methods("POST")
@@ -187,5 +187,5 @@ func main() {
 		}
 	}()
 	corsObj := handlers.AllowedOrigins([]string{os.Getenv("VIGOLER_ALLOW_ORIGIN")})
-	log.Fatal(http.ListenAndServe(":8000", handlers.CORS(corsObj)(router)))
+	log.Fatal(http.ListenAndServe(":"+os.Getenv("VIGOLER_LISTEN_PORT"), handlers.CORS(corsObj)(router)))
 }

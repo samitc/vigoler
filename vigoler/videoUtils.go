@@ -1,7 +1,6 @@
-package main
+package vigoler
 
 import (
-	"github.com/samitc/vigoler/vigoler"
 	"os"
 	"strconv"
 	"strings"
@@ -9,18 +8,18 @@ import (
 )
 
 type VideoUtils struct {
-	Youtube *vigoler.YoutubeDlWrapper
-	Ffmpeg  *vigoler.FFmpegWrapper
+	Youtube *YoutubeDlWrapper
+	Ffmpeg  *FFmpegWrapper
 }
 type multipleWaitAble struct {
-	waitAbles []*vigoler.Async
+	waitAbles []*Async
 	isStopped bool
 }
 
-func (mwa *multipleWaitAble) add(async *vigoler.Async) {
+func (mwa *multipleWaitAble) add(async *Async) {
 	mwa.waitAbles = append(mwa.waitAbles, async)
 }
-func (mwa *multipleWaitAble) remove(async *vigoler.Async) {
+func (mwa *multipleWaitAble) remove(async *Async) {
 	waitAbleLen := len(mwa.waitAbles) - 1
 	for i, v := range mwa.waitAbles {
 		if v == async {
@@ -49,7 +48,7 @@ func (mwa *multipleWaitAble) Stop() error {
 	mwa.isStopped = true
 	return nil
 }
-func validateFileName(fileName string) string {
+func ValidateFileName(fileName string) string {
 	notAllowCh := []string{`\`, `/`, `:`, `|`, `?`, `"`, `*`, `<`, `>`}
 	for _, ch := range notAllowCh {
 		fileName = strings.Replace(fileName, ch, "", -1)
@@ -71,11 +70,11 @@ func addIndexToFileName(name string) string {
 	}
 	return name
 }
-func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb, sizeSplitThreshold, maxTimeInSec, timeSplitThreshold int) (*vigoler.Async, error) {
+func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb, sizeSplitThreshold, maxTimeInSec, timeSplitThreshold int) (*Async, error) {
 	var wg sync.WaitGroup
 	var wa multipleWaitAble
-	async := vigoler.CreateAsyncWaitGroup(&wg, &wa)
-	waitForVideoToDownload := func(fAsync *vigoler.Async) {
+	async := CreateAsyncWaitGroup(&wg, &wa)
+	waitForVideoToDownload := func(fAsync *Async) {
 		defer wg.Done()
 		_, err, warn := fAsync.Get()
 		wa.remove(fAsync)
@@ -85,7 +84,7 @@ func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb,
 			async.SetResult(nil, nil, warn)
 		}
 	}
-	downloadVideo := func(url string, setting vigoler.DownloadSettings, output string) {
+	downloadVideo := func(url string, setting DownloadSettings, output string) {
 		fAsync, err := vu.Ffmpeg.Download(url, setting, output)
 		if err != nil {
 			async.SetResult(nil, err, "")
@@ -94,11 +93,11 @@ func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb,
 			waitForVideoToDownload(fAsync)
 		}
 	}
-	splitCallback := func(url string, setting vigoler.DownloadSettings, output string) {
+	splitCallback := func(url string, setting DownloadSettings, output string) {
 		output = addIndexToFileName(output)
 		downloadVideo(url, setting, output)
 	}
-	fAsync, err := vu.Ffmpeg.Download(*url, vigoler.DownloadSettings{CallbackBeforeSplit: splitCallback, MaxSizeInKb: maxSizeInKb, MaxTimeInSec: maxTimeInSec, SizeSplitThreshold: sizeSplitThreshold, TimeSplitThreshold: timeSplitThreshold}, *outputFile)
+	fAsync, err := vu.Ffmpeg.Download(*url, DownloadSettings{CallbackBeforeSplit: splitCallback, MaxSizeInKb: maxSizeInKb, MaxTimeInSec: maxTimeInSec, SizeSplitThreshold: sizeSplitThreshold, TimeSplitThreshold: timeSplitThreshold}, *outputFile)
 	if err != nil {
 		return nil, err
 	} else {
@@ -108,9 +107,9 @@ func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb,
 	}
 	return &async, nil
 }
-func (vu *VideoUtils) DownloadBestAndMerge(url vigoler.VideoUrl, output string) (*vigoler.Async, error) {
-	video, vErr := vu.Youtube.Download(url, vigoler.CreateBestVideoFormat())
-	audio, aErr := vu.Youtube.Download(url, vigoler.CreateBestAudioFormat())
+func (vu *VideoUtils) DownloadBestAndMerge(url VideoUrl, output string) (*Async, error) {
+	video, vErr := vu.Youtube.Download(url, CreateBestVideoFormat())
+	audio, aErr := vu.Youtube.Download(url, CreateBestAudioFormat())
 	if vErr != nil || aErr != nil {
 		if vErr != nil {
 			return nil, vErr
@@ -121,11 +120,11 @@ func (vu *VideoUtils) DownloadBestAndMerge(url vigoler.VideoUrl, output string) 
 	var wg sync.WaitGroup
 	var wa multipleWaitAble
 	wa.isStopped = false
-	async := vigoler.CreateAsyncWaitGroup(&wg, &wa)
+	async := CreateAsyncWaitGroup(&wg, &wa)
 	wa.add(video)
 	wa.add(audio)
 	wg.Add(1)
-	go func(video, audio *vigoler.Async, output string, url vigoler.VideoUrl) {
+	go func(video, audio *Async, output string, url VideoUrl) {
 		defer wg.Done()
 		videoPath, vErr, vWarn := video.Get()
 		wa.remove(video)
@@ -136,7 +135,7 @@ func (vu *VideoUtils) DownloadBestAndMerge(url vigoler.VideoUrl, output string) 
 			if vErr != nil {
 				err = vErr
 			}
-			if _, ok := err.(*vigoler.BadFormatError); ok {
+			if _, ok := err.(*BadFormatError); ok {
 				if !wa.isStopped {
 					dAsync, err := vu.DownloadBest(url, output)
 					if err != nil {
@@ -171,10 +170,10 @@ func (vu *VideoUtils) DownloadBestAndMerge(url vigoler.VideoUrl, output string) 
 	}(video, audio, output, url)
 	return &async, nil
 }
-func (vu *VideoUtils) download(url vigoler.VideoUrl, output string, format vigoler.Format) (*vigoler.Async, error) {
+func (vu *VideoUtils) download(url VideoUrl, output string, format Format) (*Async, error) {
 	var wg sync.WaitGroup
 	yAsync, err := vu.Youtube.Download(url, format)
-	async := vigoler.CreateAsyncFromAsyncAsWaitAble(&wg, yAsync)
+	async := CreateAsyncFromAsyncAsWaitAble(&wg, yAsync)
 	if err != nil {
 		return nil, err
 	} else {
@@ -192,11 +191,11 @@ func (vu *VideoUtils) download(url vigoler.VideoUrl, output string, format vigol
 	}
 	return &async, nil
 }
-func (vu *VideoUtils) DownloadBest(url vigoler.VideoUrl, output string) (*vigoler.Async, error) {
-	return vu.download(url, output, vigoler.CreateBestFormat())
+func (vu *VideoUtils) DownloadBest(url VideoUrl, output string) (*Async, error) {
+	return vu.download(url, output, CreateBestFormat())
 }
-func (vu *VideoUtils) DownloadBestMaxSize(url vigoler.VideoUrl, output string, sizeInMb int) (*vigoler.Async, error) {
-	format := vigoler.CreateBestFormat()
+func (vu *VideoUtils) DownloadBestMaxSize(url VideoUrl, output string, sizeInMb int) (*Async, error) {
+	format := CreateBestFormat()
 	format.MaxFileSizeInMb = sizeInMb
 	return vu.download(url, output, format)
 }

@@ -50,7 +50,7 @@ func downloadBestAndMerge(url VideoUrl, videoUtils *VideoUtils, outputFormat str
 	} else {
 		format = outputFormat
 	}
-	fileName := validateFileName(url.Name) + "." + format
+	fileName := ValidateFileName(url.Name) + "." + format
 	async, err := videoUtils.DownloadBestAndMerge(url, directory+string(os.PathSeparator)+fileName)
 	if err != nil {
 		panic(err)
@@ -74,7 +74,7 @@ func liveDownload(videos <-chan outputVideo, videoUtils *VideoUtils, wg *sync.Wa
 			} else {
 				format = video.video.Ext
 			}
-			filesName = append(filesName, video.directory+string(os.PathSeparator)+validateFileName(video.video.Name)+"."+format)
+			filesName = append(filesName, video.directory+string(os.PathSeparator)+ValidateFileName(video.video.Name)+"."+format)
 		}
 	}
 	maxSizeInKb := 9.8 * 1024 * 1024
