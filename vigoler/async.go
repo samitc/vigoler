@@ -1,6 +1,9 @@
 package vigoler
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 type Async struct {
 	Result         interface{}
@@ -8,24 +11,42 @@ type Async struct {
 	WarningsOutput string
 	wg             *sync.WaitGroup
 	wa             WaitAble
+	isFinish       bool
+	isStopped      bool
+	async          *Async
 }
 type WaitAble interface {
 	Wait() error
+	Stop() error
 }
 
-func createAsyncWaitable(waitable WaitAble) Async {
-	return Async{wa: waitable}
+func createAsyncWaitAble(waitAble WaitAble) Async {
+	return Async{wa: waitAble, isFinish: false, isStopped: false}
 }
-func createAsyncWaitGroup(wg *sync.WaitGroup) Async {
-	return Async{wg: wg}
+func CreateAsyncWaitGroup(wg *sync.WaitGroup, wa WaitAble) Async {
+	return Async{wg: wg, wa: wa, isFinish: false, isStopped: false}
 }
-func (async *Async) setResult(result interface{}, err error, warningOutput string) {
+func CreateAsyncFromAsyncAsWaitAble(wg *sync.WaitGroup, async *Async) Async {
+	return Async{wg: wg, wa: async.wa, isFinish: false, isStopped: false, async: async}
+}
+func (async *Async) SetResult(result interface{}, err error, warningOutput string) {
 	async.Result = result
 	async.Error = err
 	async.WarningsOutput = warningOutput
+	async.isFinish = true
 }
-func (async *Async) Stop() {
-	panic("Not implement") //TODO
+func (async *Async) Stop() error {
+	if async.async != nil {
+		err := async.async.Stop()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+	if async.wa != nil {
+		async.isStopped = true
+		return async.wa.Stop()
+	}
+	return nil
 }
 func (async *Async) Get() (interface{}, error, string) {
 	if async.wg != nil {
@@ -36,4 +57,7 @@ func (async *Async) Get() (interface{}, error, string) {
 		async.wa = nil
 	}
 	return async.Result, async.Error, async.WarningsOutput
+}
+func (async *Async) WillBlock() bool {
+	return !async.isFinish
 }

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"strconv"
 	str "strings"
 	"sync"
@@ -17,11 +19,13 @@ type YoutubeDlWrapper struct {
 	random rand.Rand
 }
 type Format struct {
+	format             string
 	Number             int
 	FileFormat         string
 	Resolution         string
 	Description        string
 	hasVideo, hasAudio bool
+	MaxFileSizeInMb    int
 }
 type VideoUrl struct {
 	Name   string
@@ -37,7 +41,15 @@ type BadFormatError struct {
 func (e *BadFormatError) Error() string {
 	return fmt.Sprintf("Bad format %s for url %s", e.Format, e.Video.url)
 }
-
+func fillFormat(format Format) Format {
+	if format.format == "" {
+		format.format = strconv.Itoa(format.Number)
+	}
+	if format.MaxFileSizeInMb > 0 {
+		format.format += "[filesize<" + strconv.Itoa(format.MaxFileSizeInMb) + "m]"
+	}
+	return format
+}
 func CreateYoutubeDlWrapper() YoutubeDlWrapper {
 	s1 := rand.NewSource(time.Now().UnixNano())
 	r1 := rand.New(s1)
@@ -46,13 +58,13 @@ func CreateYoutubeDlWrapper() YoutubeDlWrapper {
 }
 func (youdown *YoutubeDlWrapper) GetFormats(url VideoUrl) (*Async, error) {
 	ctx := context.Background()
-	output, err := youdown.app.runCommandChan(ctx, "-F", url.url)
+	wa, output, err := youdown.app.runCommandChan(ctx, "-F", url.url)
 	if err != nil {
 		return nil, err
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := createAsyncWaitGroup(&wg)
+	async := CreateAsyncWaitGroup(&wg, wa)
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
 		isHeader := true
@@ -80,19 +92,19 @@ func (youdown *YoutubeDlWrapper) GetFormats(url VideoUrl) (*Async, error) {
 				formats = append(formats, Format{Number: num, FileFormat: str.Trim(s[extensionStart:resolutionStart], " "), Resolution: str.Trim(s[resolutionStart:noteStart], " "), hasVideo: hasVideo, hasAudio: hasAudio, Description: s})
 			}
 		}
-		async.setResult(&formats, nil, "")
+		async.SetResult(&formats, nil, "")
 	}(&async, &output)
 	return &async, nil
 }
 func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 	ctx := context.Background()
-	output, err := youdown.app.runCommandChan(ctx, "-i", "-j", url)
+	wa, output, err := youdown.app.runCommandChan(ctx, "-i", "-j", url)
 	if err != nil {
 		return nil, err
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := createAsyncWaitGroup(&wg)
+	async := CreateAsyncWaitGroup(&wg, wa)
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
 		const URL_NAME = "webpage_url"
@@ -138,7 +150,7 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 			}
 			preWarnIndex = warnIndex
 		}
-		async.setResult(&videos, nil, warnOutput)
+		async.SetResult(&videos, nil, warnOutput)
 	}(&async, &output)
 	return &async, nil
 }
@@ -148,13 +160,13 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string) (*Asyn
 	}
 	ctx := context.Background()
 	outputFileName := strconv.Itoa(youdown.random.Int())
-	output, err := youdown.app.runCommandChan(ctx, "-o", outputFileName, "-f", format, url.url)
+	wa, output, err := youdown.app.runCommandChan(ctx, "-o", outputFileName, "-f", format, url.url)
 	if err != nil {
 		return nil, err
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := createAsyncWaitGroup(&wg)
+	async := CreateAsyncWaitGroup(&wg, wa)
 	go func(url VideoUrl, async *Async, output *<-chan string, format string) {
 		defer async.wg.Done()
 		const DESTINATION = "Destination:"
@@ -178,51 +190,53 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string) (*Asyn
 				dest = s[destIndex+len(DESTINATION)+1 : len(s)-1]
 			}
 		}
-		async.setResult(&dest, err, warn)
+		if async.isStopped {
+			files, err := filepath.Glob(dest + "*")
+			if err != nil {
+				fmt.Println(err)
+			} else {
+				for _, f := range files {
+					os.Remove(f)
+				}
+			}
+			os.Remove(dest)
+		}
+		async.SetResult(&dest, err, warn)
 	}(url, &async, &output, format)
 	return &async, nil
 }
 func (youdown *YoutubeDlWrapper) Download(url VideoUrl, format Format) (*Async, error) {
-	return youdown.downloadUrl(url, strconv.Itoa(format.Number))
+	return youdown.downloadUrl(url, fillFormat(format).format)
 }
-func (youdown *YoutubeDlWrapper) DownloadBestAudio(url VideoUrl) (*Async, error) {
-	return youdown.downloadUrl(url, "bestaudio")
+func CreateBestAudioFormat() Format {
+	return Format{format: "bestaudio"}
 }
-func (youdown *YoutubeDlWrapper) DownloadBestVideo(url VideoUrl) (*Async, error) {
-	return youdown.downloadUrl(url, "bestvideo")
+func CreateBestVideoFormat() Format {
+	return Format{format: "bestvideo"}
 }
-func (youdown *YoutubeDlWrapper) DownloadBest(url VideoUrl) (*Async, error) {
-	return youdown.downloadUrl(url, "best")
+func CreateBestFormat() Format {
+	return Format{format: "best"}
 }
 func (youdown *YoutubeDlWrapper) getRealVideoUrl(url VideoUrl, format string) (*Async, error) {
 	ctx := context.Background()
-	output, err := youdown.app.runCommandChan(ctx, "-g", "-f", format, url.url)
+	wa, output, err := youdown.app.runCommandChan(ctx, "-g", "-f", format, url.url)
 	if err != nil {
 		return nil, err
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := createAsyncWaitGroup(&wg)
+	async := CreateAsyncWaitGroup(&wg, wa)
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
 		for s := range *output {
 			if async.Result != nil {
 				fmt.Println(s) //TODO: return error - should not happen
 			}
-			async.setResult(&s, nil, "")
+			async.SetResult(&s, nil, "")
 		}
 	}(&async, &output)
 	return &async, nil
 }
 func (youdown *YoutubeDlWrapper) GetRealVideoUrl(url VideoUrl, format Format) (*Async, error) {
-	return youdown.getRealVideoUrl(url, strconv.Itoa(format.Number))
-}
-func (youdown *YoutubeDlWrapper) GetRealVideoUrlBestAudio(url VideoUrl) (*Async, error) {
-	return youdown.getRealVideoUrl(url, "bestaudio")
-}
-func (youdown *YoutubeDlWrapper) GetRealVideoUrlBestVideo(url VideoUrl) (*Async, error) {
-	return youdown.getRealVideoUrl(url, "bestvideo")
-}
-func (youdown *YoutubeDlWrapper) GetRealVideoUrlBest(url VideoUrl) (*Async, error) {
-	return youdown.getRealVideoUrl(url, "best")
+	return youdown.getRealVideoUrl(url, fillFormat(format).format)
 }

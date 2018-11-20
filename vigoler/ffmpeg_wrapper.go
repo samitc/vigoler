@@ -33,13 +33,13 @@ func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 		finalArgs = append(finalArgs, "-i", i)
 	}
 	finalArgs = append(finalArgs, "-c", "copy", output)
-	cOutput, err := ff.app.runCommandChan(context.Background(), finalArgs...)
+	wa, cOutput, err := ff.app.runCommandChan(context.Background(), finalArgs...)
 	if err != nil {
 		return nil, err
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	async := createAsyncWaitGroup(&wg)
+	async := CreateAsyncWaitGroup(&wg, wa)
 	go func(async *Async, fileOutput string, output *<-chan string) {
 		warn := ""
 		defer async.wg.Done()
@@ -53,7 +53,7 @@ func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 		if warn != "" {
 			warn = "WARNING WHEN MERGE " + fileOutput + ":" + warn
 		}
-		async.setResult(nil, nil, warn)
+		async.SetResult(nil, nil, warn)
 	}(&async, output, &cOutput)
 	return &async, nil
 }
@@ -81,11 +81,11 @@ func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output s
 	}
 	var async Async
 	if !needCommandReader {
-		async = createAsyncWaitable(waitAble)
+		async = createAsyncWaitAble(waitAble)
 	} else {
 		var wg sync.WaitGroup
 		wg.Add(1)
-		async = createAsyncWaitGroup(&wg)
+		async = CreateAsyncWaitGroup(&wg, waitAble)
 		go func(async *Async, reader io.ReadCloser, setting *DownloadSettings) {
 			defer async.wg.Done()
 			defer reader.Close()
