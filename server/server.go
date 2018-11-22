@@ -164,7 +164,7 @@ func download(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			} else {
 				vid.updateTime = time.Now()
-				w.Header().Set("Content-Disposition", "attachment; filename="+fileName)
+				w.Header().Set("Content-Disposition", "attachment; filename=\""+fileName+"\"")
 				w.Header().Set("Content-Type", r.Header.Get("Content-Type"))
 				fs, err := file.Stat()
 				if err != nil {
