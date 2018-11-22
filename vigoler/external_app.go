@@ -3,9 +3,11 @@ package vigoler
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 type externalApp struct {
@@ -55,6 +57,13 @@ func (external *externalApp) runCommand(ctx context.Context, createChan bool, cl
 	if err := cmd.Start(); err != nil {
 		return nil, nil, nil, err
 	}
+	go func(cmd *exec.Cmd, app string, args ...string) {
+		err := cmd.Wait()
+		if err != nil {
+			fmt.Println("error in app:" + app + " with args:" + strings.Join(args, ","))
+			fmt.Println(err)
+		}
+	}(cmd, external.appLocation, arg...)
 	return &commandWaitAble{cmd: cmd}, streamReader, outputChannel, nil
 }
 func (external *externalApp) runCommandWait(ctx context.Context, arg ...string) (WaitAble, error) {

@@ -122,13 +122,25 @@ func process(w http.ResponseWriter, r *http.Request) {
 		for i := 0; i < len(videos); i++ {
 			key := checkIfVideoExist(&videos[i])
 			if key != nil {
-				videos[i].ID = *key
+				videos[i] = *videosMap[*key]
 			}
 			videos[i].updateTime = curTime
 			videosMap[videos[i].ID] = &videos[i]
 		}
 	}
 	json.NewEncoder(w).Encode(videos)
+}
+func checkFileDownloaded(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	vid := videosMap[vars["ID"]]
+	if vid == nil {
+		w.WriteHeader(http.StatusNotFound)
+	} else {
+		if vid.async.WillBlock() {
+			w.WriteHeader(http.StatusAccepted)
+		}
+		json.NewEncoder(w).Encode(vid)
+	}
 }
 func download(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -177,7 +189,8 @@ func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/videos", process).Methods("POST")
 	router.HandleFunc("/videos/{ID}", downloadVideo).Methods("POST")
-	router.HandleFunc("/videos/{ID}", download).Methods("GET")
+	router.HandleFunc("/videos/{ID}", checkFileDownloaded).Methods("GET")
+	router.HandleFunc("/videos/{ID}/download", download).Methods("GET")
 	go func() {
 		for true {
 			seconds, _ := strconv.Atoi(os.Getenv("VIGOLER_CLEANER_PERIODIC"))
@@ -187,5 +200,5 @@ func main() {
 		}
 	}()
 	corsObj := handlers.AllowedOrigins([]string{os.Getenv("VIGOLER_ALLOW_ORIGIN")})
-	log.Fatal(http.ListenAndServe(":"+os.Getenv("VIGOLER_LISTEN_PORT"), handlers.CORS(corsObj)(router)))
+	log.Fatal(http.ListenAndServe(os.Getenv("VIGOLER_LISTEN_ADDR"), handlers.CORS(corsObj)(router)))
 }
