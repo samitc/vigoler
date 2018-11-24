@@ -200,5 +200,14 @@ func main() {
 		}
 	}()
 	corsObj := handlers.AllowedOrigins([]string{os.Getenv("VIGOLER_ALLOW_ORIGIN")})
-	log.Fatal(http.ListenAndServe(os.Getenv("VIGOLER_LISTEN_ADDR"), handlers.CORS(corsObj)(router)))
+	certFile := os.Getenv("VIGOLER_CERT_FILE")
+	keyFile := os.Getenv("VIGOLER_KEY_FILE")
+	addr := os.Getenv("VIGOLER_LISTEN_ADDR")
+	muxHandlers := handlers.CORS(corsObj)(router)
+	isTls := len(certFile) != 0 && len(keyFile) != 0
+	if isTls {
+		log.Fatal(http.ListenAndServeTLS(addr, certFile, keyFile, muxHandlers))
+	} else {
+		log.Fatal(http.ListenAndServe(addr, muxHandlers))
+	}
 }
