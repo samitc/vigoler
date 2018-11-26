@@ -84,7 +84,7 @@ func liveDownload(videos <-chan outputVideo, videoUtils *VideoUtils, wg *sync.Wa
 	var downloadAsync []*Async
 	for i, video := range pendingAsync {
 		videoUrl := getAsyncData(video, filesName[i]).(*string)
-		async, err := videoUtils.LiveDownload(videoUrl, &filesName[i], int(maxSizeInKb), int(sizeSplitThreshold), int(maxTimeInSec), int(timeSplitThreshold))
+		async, err := videoUtils.LiveDownload(videoUrl, &filesName[i], int(maxSizeInKb), int(sizeSplitThreshold), int(maxTimeInSec), int(timeSplitThreshold), nil, nil)
 		if err != nil {
 			fmt.Println(err)
 		} else {
