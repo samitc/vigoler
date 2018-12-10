@@ -15,6 +15,10 @@ type multipleWaitAble struct {
 	waitAbles []*Async
 	isStopped bool
 }
+type TypedError interface {
+	error
+	Type() string
+}
 
 func (mwa *multipleWaitAble) add(async *Async) {
 	mwa.waitAbles = append(mwa.waitAbles, async)

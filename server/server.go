@@ -72,11 +72,11 @@ func createVideos(url string) ([]video, error) {
 		return nil, err
 	}
 	urls, err, warn := async.Get()
-	if err != nil {
-		return nil, err
-	}
 	if warn != "" {
 		fmt.Println(warn)
+	}
+	if err != nil {
+		return nil, err
 	}
 	videos := make([]video, 0)
 	for _, url := range *urls.(*[]vigoler.VideoUrl) {
@@ -119,11 +119,18 @@ func checkIfVideoExist(vid *video) *string {
 	}
 	return nil
 }
+func writeErrorToClient(w http.ResponseWriter, err error) {
+	w.WriteHeader(http.StatusInternalServerError)
+	if _, ok := err.(vigoler.TypedError); ok {
+		w.Write([]byte(err.(vigoler.TypedError).Type()))
+	}
+}
 func process(w http.ResponseWriter, r *http.Request) {
 	youtubeUrl := readBody(r)
 	videos, err := createVideos(youtubeUrl)
 	if err != nil {
 		fmt.Println(err)
+		writeErrorToClient(w, err)
 	} else {
 		curTime := time.Now()
 		for i := 0; i < len(videos); i++ {
@@ -150,9 +157,8 @@ func checkFileDownloaded(w http.ResponseWriter, r *http.Request) {
 		if !vid.isLogged {
 			fmt.Print(vid)
 		}
-		if _, ok := err.(*vigoler.BadFormatError); ok {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("Bad format"))
+		if err != nil {
+			writeErrorToClient(w, err)
 		} else {
 			json.NewEncoder(w).Encode(vid)
 		}

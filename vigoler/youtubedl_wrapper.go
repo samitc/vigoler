@@ -37,9 +37,22 @@ type BadFormatError struct {
 	Video  VideoUrl
 	Format string
 }
+type HttpError struct {
+	Video        string
+	ErrorMessage string
+}
 
 func (e *BadFormatError) Error() string {
 	return fmt.Sprintf("Bad format %s for url %s", e.Format, e.Video.url)
+}
+func (e *HttpError) Error() string {
+	return fmt.Sprintf("Http errer while requested %s. error message is:", e.Video, e.ErrorMessage)
+}
+func (e *BadFormatError) Type() string {
+	return "Bad format"
+}
+func (e *HttpError) Type() string {
+	return "Http error"
 }
 func fillFormat(format Format) Format {
 	if format.format == "" {
@@ -105,13 +118,14 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	async := CreateAsyncWaitGroup(&wg, wa)
-	go func(async *Async, output *<-chan string) {
+	go func(async *Async, output *<-chan string, url string) {
 		defer async.wg.Done()
 		const URL_NAME = "webpage_url"
 		const ALIVE_NAME = "is_live"
 		const TITLE_NAME = "title"
 		const EXT_NAME = "ext"
 		var videos []VideoUrl
+		var err error = nil
 		warnOutput := ""
 		videoIndex := 0
 		preWarnIndex := -1
@@ -144,14 +158,17 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 					warnVideoIndex -= 1
 				}
 				warnOutput += "WARN IN VIDEO NUMBER: " + strconv.Itoa(warnVideoIndex) + ". " + s
+				if str.Index(s, "Unable to download webpage: HTTP Error 503") != -1 {
+					err = &HttpError{Video: url}
+				}
 			}
 			if !hasWarn || preWarnIndex == -1 {
 				videoIndex++
 			}
 			preWarnIndex = warnIndex
 		}
-		async.SetResult(&videos, nil, warnOutput)
-	}(&async, &output)
+		async.SetResult(&videos, err, warnOutput)
+	}(&async, &output, url)
 	return &async, nil
 }
 func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string) (*Async, error) {
