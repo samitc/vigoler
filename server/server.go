@@ -23,6 +23,13 @@ type video struct {
 	videoUrl   vigoler.VideoUrl `json:"-"`
 	async      *vigoler.Async   `json:"-"`
 	updateTime time.Time        `json:"-"`
+	isLogged   bool             `json:"-"`
+}
+
+func (vid *video) String() string {
+	_, err, warn := vid.async.Get()
+	return fmt.Sprintf("id=%s, name=%s, ext=%s, url=%v,update time=%v, error=%v, warn=%s",
+		vid.ID, vid.Name, vid.Ext, vid.videoUrl, vid.updateTime, err, warn)
 }
 
 var videosMap map[string]*video
@@ -73,7 +80,7 @@ func createVideos(url string) ([]video, error) {
 	}
 	videos := make([]video, 0)
 	for _, url := range *urls.(*[]vigoler.VideoUrl) {
-		videos = append(videos, video{videoUrl: url, ID: createId(), Name: url.Name, Ext: url.Ext})
+		videos = append(videos, video{videoUrl: url, ID: createId(), Name: url.Name, Ext: url.Ext, isLogged: false})
 	}
 	return videos, nil
 }
@@ -139,7 +146,16 @@ func checkFileDownloaded(w http.ResponseWriter, r *http.Request) {
 		if vid.async.WillBlock() {
 			w.WriteHeader(http.StatusAccepted)
 		}
-		json.NewEncoder(w).Encode(vid)
+		_, err, _ := vid.async.Get()
+		if !vid.isLogged {
+			fmt.Print(vid)
+		}
+		if _, ok := err.(*vigoler.BadFormatError); ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Bad format"))
+		} else {
+			json.NewEncoder(w).Encode(vid)
+		}
 	}
 }
 func download(w http.ResponseWriter, r *http.Request) {
