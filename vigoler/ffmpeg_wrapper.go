@@ -75,7 +75,7 @@ func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output s
 		args = append(args, "-fs", strconv.Itoa(setting.MaxSizeInKb*KB_TO_BYTE))
 	}
 	args = append(args, output)
-	waitAble, reader, _, err := ff.app.runCommand(context.Background(), false, !needCommandReader, args...)
+	waitAble, reader, _, err := ff.app.runCommand(context.Background(), false, !needCommandReader, true, args...)
 	if err != nil {
 		return nil, err
 	}

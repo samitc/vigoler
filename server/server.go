@@ -98,10 +98,12 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 				fmt.Println(err)
 				w.WriteHeader(http.StatusInternalServerError)
 			} else {
-				format := vigoler.CreateBestFormat()
-				format.MaxFileSizeInMb = size
 				vid.updateTime = time.Now()
-				vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext), size)
+				if size == -1 {
+					vid.async, err = videoUtils.DownloadBest(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext))
+				} else {
+					vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext), size)
+				}
 				if err != nil {
 					fmt.Println(err)
 					w.WriteHeader(http.StatusInternalServerError)
@@ -121,8 +123,8 @@ func checkIfVideoExist(vid *video) *string {
 }
 func writeErrorToClient(w http.ResponseWriter, err error) {
 	w.WriteHeader(http.StatusInternalServerError)
-	if _, ok := err.(vigoler.TypedError); ok {
-		w.Write([]byte(err.(vigoler.TypedError).Type()))
+	if typedError, ok := err.(vigoler.TypedError); ok {
+		w.Write([]byte(typedError.Type()))
 	}
 }
 func process(w http.ResponseWriter, r *http.Request) {

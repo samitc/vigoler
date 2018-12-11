@@ -41,6 +41,7 @@ type HttpError struct {
 	Video        string
 	ErrorMessage string
 }
+type DownloadStatus func(url VideoUrl, percent, size float32)
 
 func (e *BadFormatError) Error() string {
 	return fmt.Sprintf("Bad format %s for url %s", e.Format, e.Video.url)
@@ -171,59 +172,102 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 	}(&async, &output, url)
 	return &async, nil
 }
-func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string) (*Async, error) {
+func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string, status DownloadStatus) (*Async, error) {
 	if url.IsLive {
 		return nil, errors.New("can not download live video") //TODO: make new error type
 	}
 	ctx := context.Background()
 	outputFileName := strconv.Itoa(youdown.random.Int())
-	wa, output, err := youdown.app.runCommandChan(ctx, "-o", outputFileName, "-f", format, url.url)
+	wa, _, output, err := youdown.app.runCommand(ctx, true, true, false, "-o", outputFileName, "-f", format, url.url)
 	if err != nil {
 		return nil, err
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
 	async := CreateAsyncWaitGroup(&wg, wa)
-	go func(url VideoUrl, async *Async, output *<-chan string, format string) {
+	go func(url VideoUrl, async *Async, output *<-chan string, format string, status DownloadStatus) {
 		defer async.wg.Done()
 		const DESTINATION = "Destination:"
-		var dest string
+		var dest = ""
 		warn := ""
 		var err error = nil
-		for s := range *output {
-			if -1 != str.Index(s, "ERROR") {
-				if s[:len(s)-1] == "ERROR: requested format not available" { // s contain also \n
-					err = &BadFormatError{Video: url, Format: format}
-					break
-				} else {
-					if warn == "" {
-						warn += url.url + "\n"
-					}
-					warn = warn + s + "\n"
-				}
+		extractLineFromString := func(partString string) (nextPartString, fullString string) {
+			partString = str.Replace(partString, "\r", "\n", 1)
+			if i := str.Index(partString, "\n"); i >= 0 {
+				i++
+				return partString[i:], partString[:i]
 			}
-			destIndex := str.Index(s, DESTINATION)
-			if destIndex != -1 {
-				dest = s[destIndex+len(DESTINATION)+1 : len(s)-1]
+			return partString, ""
+		}
+		fullS := ""
+		for s := range *output {
+			fullS += s
+			fullS, s = extractLineFromString(fullS)
+			if s != "" && s != "\n" {
+				if -1 != str.Index(s, "ERROR") {
+					if s[:len(s)-1] == "ERROR: requested format not available" { // s contain also \n
+						err = &BadFormatError{Video: url, Format: format}
+						break
+					} else {
+						if warn == "" {
+							warn += url.url + "\n"
+						}
+						warn = warn + s + "\n"
+					}
+				}
+				if dest == "" {
+					destIndex := str.Index(s, DESTINATION)
+					if destIndex != -1 {
+						dest = s[destIndex+len(DESTINATION)+1 : len(s)-1]
+					}
+				} else {
+					if status != nil {
+						//0.0% of 1.07GiB at 241.96KiB/s ETA 01:16:55^C
+						perPos := str.Index(s, "%")
+						startPerPos := str.Index(s, "]") + 1
+						temp := str.Replace(s[startPerPos:perPos], " ", "", -1)
+						curPer, err := strconv.ParseFloat(str.Replace(s[startPerPos:perPos], " ", "", -1), 32)
+						if err != nil {
+							fmt.Println(err)
+							continue
+						}
+						sizeEndPos := perPos + 5
+						for ; '0' <= s[sizeEndPos] && s[sizeEndPos] <= '9' || s[sizeEndPos] == '.'; sizeEndPos++ {
+						}
+						temp = s[perPos+5 : sizeEndPos]
+						_ = temp
+						size, err := strconv.ParseFloat(s[perPos+5:sizeEndPos], 32)
+						if err != nil {
+							fmt.Println(err)
+							continue
+						}
+						if s[sizeEndPos] == 'G' {
+							size *= 1024
+						}
+						status(url, float32(curPer), float32(size))
+					}
+				}
 			}
 		}
 		if async.isStopped {
-			files, err := filepath.Glob(dest + "*")
-			if err != nil {
-				fmt.Println(err)
+			files, dErr := filepath.Glob(dest + "*")
+			if dErr != nil {
+				fmt.Println(dErr)
 			} else {
 				for _, f := range files {
 					os.Remove(f)
 				}
 			}
 			os.Remove(dest)
+			err = &CancelError{}
+			dest = ""
 		}
 		async.SetResult(&dest, err, warn)
-	}(url, &async, &output, format)
+	}(url, &async, &output, format, status)
 	return &async, nil
 }
-func (youdown *YoutubeDlWrapper) Download(url VideoUrl, format Format) (*Async, error) {
-	return youdown.downloadUrl(url, fillFormat(format).format)
+func (youdown *YoutubeDlWrapper) Download(url VideoUrl, format Format, status DownloadStatus) (*Async, error) {
+	return youdown.downloadUrl(url, fillFormat(format).format, status)
 }
 func CreateBestAudioFormat() Format {
 	return Format{format: "bestaudio"}
