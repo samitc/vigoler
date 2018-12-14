@@ -3,6 +3,7 @@ package vigoler
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"strconv"
 	"strings"
@@ -25,7 +26,7 @@ func CreateFfmpegWrapper() FFmpegWrapper {
 	return FFmpegWrapper{app: externalApp{"ffmpeg"}}
 }
 func beforeStartWork(line string) bool {
-	return line[:len(line)-2] == "Press [q] to stop, [?] for help"
+	return line[:len(line)-1] == "Press [q] to stop, [?] for help"
 }
 func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 	finalArgs := make([]string, 0, len(input)*2+3)
@@ -93,8 +94,9 @@ func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output s
 				return int((s[0]-'0')*10 + s[1] - '0')
 			}
 			processData := func(line string) (time, size int) {
-				if strings.Index(line, "frame") != -1 {
-					splits := strings.Split(line, "=")
+				frameStart := strings.Index(line, "frame")
+				if frameStart != -1 {
+					splits := strings.Split(line[frameStart:], "=")
 					sizeStr := splits[4]
 					numberEnd := strings.Index(sizeStr, "k")
 					numberStart := strings.LastIndex(sizeStr[:numberEnd], " ") + 1
@@ -125,6 +127,11 @@ func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output s
 			}
 			if err != io.EOF {
 				panic(err)
+			}
+			if delim == '\n' {
+				async.SetResult(nil, errors.New("ffmpeg not start"), "")
+			} else {
+				async.SetResult(nil, nil, "")
 			}
 		}(&async, reader, &setting)
 	}

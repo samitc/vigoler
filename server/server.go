@@ -12,7 +12,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -20,6 +22,8 @@ type video struct {
 	ID         string           `json:"id"`
 	Name       string           `json:"name"`
 	Ext        string           `json:"ext"`
+	IsLive     bool             `json:"is_live"`
+	Ids        []string         `json:"ids,omitempty"`
 	videoUrl   vigoler.VideoUrl `json:"-"`
 	async      *vigoler.Async   `json:"-"`
 	updateTime time.Time        `json:"-"`
@@ -57,9 +61,8 @@ func serverCleaner() {
 func createId() string {
 	return ksuid.New().String()
 }
-func validateMaxFileSize(fileSize string) (int, error) {
+func validateInt(fileSize string) (int, error) {
 	return strconv.Atoi(fileSize)
-
 }
 func readBody(r *http.Request) string {
 	buf := new(bytes.Buffer)
@@ -80,9 +83,75 @@ func createVideos(url string) ([]video, error) {
 	}
 	videos := make([]video, 0)
 	for _, url := range *urls.(*[]vigoler.VideoUrl) {
-		videos = append(videos, video{videoUrl: url, ID: createId(), Name: url.Name, Ext: url.Ext, isLogged: false})
+		videos = append(videos, video{videoUrl: url, ID: createId(), Name: url.Name, Ext: url.Ext, IsLive: url.IsLive, isLogged: false})
 	}
 	return videos, nil
+}
+func extractLiveParameter() (err error, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit int) {
+	maxSizeInKb, err = validateInt(os.Getenv("VIGOLER_LIVE_MAX_SIZE"))
+	if err != nil {
+		return
+	}
+	sizeSplit, err = validateInt(os.Getenv("VIGOLER_LIVE_SPLIT_Size"))
+	if err != nil {
+		return
+	}
+	maxTimeInSec, err = validateInt(os.Getenv("VIGOLER_LIVE_MAX_TIME"))
+	if err != nil {
+		return
+	}
+	timeSplit, err = validateInt(os.Getenv("VIGOLER_LIVE_SPLIT_TIME"))
+	if err != nil {
+		return
+	}
+	return
+}
+func downloadVideoLive(w http.ResponseWriter, vid *video) {
+	if strings.ToLower(os.Getenv("VIGOLER_SUPPORT_LIVE")) != "true" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	} else {
+		async, err := videoUtils.Youtube.GetRealVideoUrl(vid.videoUrl, vigoler.CreateBestFormat())
+		if err != nil {
+			fmt.Println(err)
+			w.WriteHeader(http.StatusInternalServerError)
+		} else {
+			res, err, warn := async.Get()
+			if err != nil {
+				fmt.Println(err)
+				w.WriteHeader(http.StatusInternalServerError)
+			} else {
+				if len(warn) > 0 {
+					fmt.Println(warn)
+				}
+				fileName := vigoler.ValidateFileName(vid.Name + "." + vid.Ext)
+				err, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit := extractLiveParameter()
+				if err != nil {
+					fmt.Println(err)
+					w.WriteHeader(http.StatusInternalServerError)
+				} else {
+					var fileDownloadedCallback vigoler.LiveVideoCallback
+					fileDownloadedCallback = func(data interface{}, fileName string, async *vigoler.Async) {
+						_, err, _ = async.Get()
+						if err == nil {
+							vid := data.(*video)
+							ext := path.Ext(fileName)[1:]
+							name := fileName[:len(fileName)-(len(ext)+1)]
+							id := createId()
+							vid.Ids = append(vid.Ids, id)
+							videosMap[id] = &video{Name: name, Ext: ext, IsLive: false, ID: id, updateTime: time.Now(), async: async}
+						}
+					}
+					vid.async, err = videoUtils.LiveDownload(res.(*string), &fileName, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit, fileDownloadedCallback, vid)
+					if err != nil {
+						fmt.Println(err)
+						w.WriteHeader(http.StatusInternalServerError)
+					} else {
+						json.NewEncoder(w).Encode(vid)
+					}
+				}
+			}
+		}
+	}
 }
 func downloadVideo(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -93,22 +162,26 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 		if vid.async != nil {
 			json.NewEncoder(w).Encode(vid)
 		} else {
-			size, err := validateMaxFileSize(os.Getenv("VIGOLER_MAX_FILE_SIZE"))
-			if err != nil {
-				fmt.Println(err)
-				w.WriteHeader(http.StatusInternalServerError)
+			if vid.IsLive {
+				downloadVideoLive(w, vid)
 			} else {
-				vid.updateTime = time.Now()
-				if size == -1 {
-					vid.async, err = videoUtils.DownloadBest(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext))
-				} else {
-					vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext), size)
-				}
-				if err != nil {
-					fmt.Println(err)
-					w.WriteHeader(http.StatusInternalServerError)
-				}
-				json.NewEncoder(w).Encode(vid)
+				sizeInKb, err := validateMaxFileSize(os.Getenv("VIGOLER_MAX_FILE_SIZE"))
+			  if err != nil {
+				  fmt.Println(err)
+				  w.WriteHeader(http.StatusInternalServerError)
+			  } else {
+				  vid.updateTime = time.Now()
+				  if sizeInKb == -1 {
+				  	vid.async, err = videoUtils.DownloadBest(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext))
+				  } else {
+				  	vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext), sizeInKb/1024)
+			  	}
+			  	if err != nil {
+			  		fmt.Println(err)
+				  	w.WriteHeader(http.StatusInternalServerError)
+			  	}
+			  	json.NewEncoder(w).Encode(vid)
+		  	}
 			}
 		}
 	}
@@ -152,7 +225,7 @@ func checkFileDownloaded(w http.ResponseWriter, r *http.Request) {
 	if vid == nil {
 		w.WriteHeader(http.StatusNotFound)
 	} else {
-		if vid.async.WillBlock() {
+		if vid.async == nil || vid.async.WillBlock() {
 			w.WriteHeader(http.StatusAccepted)
 		}
 		_, err, _ := vid.async.Get()
@@ -171,7 +244,7 @@ func download(w http.ResponseWriter, r *http.Request) {
 	vid := videosMap[vars["ID"]]
 	if vid == nil {
 		w.WriteHeader(http.StatusNotFound)
-	} else if !vid.async.WillBlock() {
+	} else if !vid.async.WillBlock() && !vid.IsLive {
 		_, err, warn := vid.async.Get()
 		if warn != "" {
 			fmt.Println(warn)
