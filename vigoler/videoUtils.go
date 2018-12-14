@@ -15,7 +15,7 @@ type multipleWaitAble struct {
 	waitAbles []*Async
 	isStopped bool
 }
-type LiveVideoCallback func(data interface{}, fileName string)
+type LiveVideoCallback func(data interface{}, fileName string, async *Async)
 
 func (mwa *multipleWaitAble) add(async *Async) {
 	mwa.waitAbles = append(mwa.waitAbles, async)
@@ -71,7 +71,7 @@ func addIndexToFileName(name string) string {
 	}
 	return name
 }
-func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb, sizeSplitThreshold, maxTimeInSec, timeSplitThreshold int, liveVideoCallback *LiveVideoCallback, data interface{}) (*Async, error) {
+func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb, sizeSplitThreshold, maxTimeInSec, timeSplitThreshold int, liveVideoCallback LiveVideoCallback, data interface{}) (*Async, error) {
 	var wg sync.WaitGroup
 	var wa multipleWaitAble
 	async := CreateAsyncWaitGroup(&wg, &wa)
@@ -82,7 +82,7 @@ func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb,
 		_, err, warn := fAsync.Get()
 		wa.remove(fAsync)
 		if lLiveVideoCallback != nil {
-			(*lLiveVideoCallback)(lData, output)
+			lLiveVideoCallback(lData, output, fAsync)
 		}
 		if err != nil {
 			async.SetResult(nil, err, warn)
@@ -96,6 +96,7 @@ func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb,
 			async.SetResult(nil, err, "")
 		} else {
 			wg.Add(1)
+			wa.add(fAsync)
 			waitForVideoToDownload(fAsync, output)
 		}
 	}

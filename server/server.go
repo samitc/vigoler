@@ -81,19 +81,19 @@ func createVideos(url string) ([]video, error) {
 	return videos, nil
 }
 func extractLiveParameter() (err error, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit int) {
-	maxSizeInKb, err = validateInt(os.Getenv("VIGOLER_MAX_LIVE_SIZE"))
+	maxSizeInKb, err = validateInt(os.Getenv("VIGOLER_LIVE_MAX_SIZE"))
 	if err != nil {
 		return
 	}
-	sizeSplit, err = validateInt(os.Getenv("VIGOLER_SIZE_SPLIT_LIVE"))
+	sizeSplit, err = validateInt(os.Getenv("VIGOLER_LIVE_SPLIT_Size"))
 	if err != nil {
 		return
 	}
-	maxTimeInSec, err = validateInt(os.Getenv("VIGOLER_MAX_LIVE_TIME"))
+	maxTimeInSec, err = validateInt(os.Getenv("VIGOLER_LIVE_MAX_TIME"))
 	if err != nil {
 		return
 	}
-	timeSplit, err = validateInt(os.Getenv("VIGOLER_TIME_SPLIT_LIVE"))
+	timeSplit, err = validateInt(os.Getenv("VIGOLER_LIVE_SPLIT_TIME"))
 	if err != nil {
 		return
 	}
@@ -116,22 +116,25 @@ func downloadVideoLive(w http.ResponseWriter, vid *video) {
 				if len(warn) > 0 {
 					fmt.Println(warn)
 				}
-				fileName := vid.Name + "." + vid.Ext
+				fileName := vigoler.ValidateFileName(vid.Name + "." + vid.Ext)
 				err, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit := extractLiveParameter()
 				if err != nil {
 					fmt.Println(err)
 					w.WriteHeader(http.StatusInternalServerError)
 				} else {
 					var fileDownloadedCallback vigoler.LiveVideoCallback
-					fileDownloadedCallback = func(data interface{}, fileName string) {
-						vid := data.(*video)
-						ext := path.Ext(fileName)
-						name := fileName[:len(fileName)-len(ext)]
-						id := createId()
-						vid.Ids = append(vid.Ids, id)
-						videosMap[id] = &video{Name: name, Ext: ext, IsLive: false, ID: id, updateTime: time.Now()}
+					fileDownloadedCallback = func(data interface{}, fileName string, async *vigoler.Async) {
+						_, err, _ = async.Get()
+						if err == nil {
+							vid := data.(*video)
+							ext := path.Ext(fileName)[1:]
+							name := fileName[:len(fileName)-(len(ext)+1)]
+							id := createId()
+							vid.Ids = append(vid.Ids, id)
+							videosMap[id] = &video{Name: name, Ext: ext, IsLive: false, ID: id, updateTime: time.Now(), async: async}
+						}
 					}
-					vid.async, err = videoUtils.LiveDownload(res.(*string), &fileName, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit, &fileDownloadedCallback, &vid)
+					vid.async, err = videoUtils.LiveDownload(res.(*string), &fileName, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit, fileDownloadedCallback, vid)
 					if err != nil {
 						fmt.Println(err)
 						w.WriteHeader(http.StatusInternalServerError)
@@ -155,15 +158,15 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 			if vid.IsLive {
 				downloadVideoLive(w, vid)
 			} else {
-				size, err := validateInt(os.Getenv("VIGOLER_MAX_FILE_SIZE"))
+				sizeInKb, err := validateInt(os.Getenv("VIGOLER_MAX_FILE_SIZE"))
 				if err != nil {
 					fmt.Println(err)
 					w.WriteHeader(http.StatusInternalServerError)
 				} else {
 					format := vigoler.CreateBestFormat()
-					format.MaxFileSizeInMb = size
+					format.MaxFileSizeInMb = sizeInKb / 1024
 					vid.updateTime = time.Now()
-					vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext), size)
+					vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext), sizeInKb/1024)
 					if err != nil {
 						fmt.Println(err)
 						w.WriteHeader(http.StatusInternalServerError)
@@ -206,7 +209,7 @@ func checkFileDownloaded(w http.ResponseWriter, r *http.Request) {
 	if vid == nil {
 		w.WriteHeader(http.StatusNotFound)
 	} else {
-		if vid.async.WillBlock() {
+		if vid.async == nil || vid.async.WillBlock() {
 			w.WriteHeader(http.StatusAccepted)
 		}
 		json.NewEncoder(w).Encode(vid)
@@ -217,7 +220,7 @@ func download(w http.ResponseWriter, r *http.Request) {
 	vid := videosMap[vars["ID"]]
 	if vid == nil {
 		w.WriteHeader(http.StatusNotFound)
-	} else if !vid.async.WillBlock() {
+	} else if !vid.async.WillBlock() && !vid.IsLive {
 		_, err, warn := vid.async.Get()
 		if warn != "" {
 			fmt.Println(warn)
