@@ -165,23 +165,23 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 			if vid.IsLive {
 				downloadVideoLive(w, vid)
 			} else {
-				sizeInKb, err := validateMaxFileSize(os.Getenv("VIGOLER_MAX_FILE_SIZE"))
-			  if err != nil {
-				  fmt.Println(err)
-				  w.WriteHeader(http.StatusInternalServerError)
-			  } else {
-				  vid.updateTime = time.Now()
-				  if sizeInKb == -1 {
-				  	vid.async, err = videoUtils.DownloadBest(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext))
-				  } else {
-				  	vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext), sizeInKb/1024)
-			  	}
-			  	if err != nil {
-			  		fmt.Println(err)
-				  	w.WriteHeader(http.StatusInternalServerError)
-			  	}
-			  	json.NewEncoder(w).Encode(vid)
-		  	}
+				sizeInKb, err := validateInt(os.Getenv("VIGOLER_MAX_FILE_SIZE"))
+				if err != nil {
+					fmt.Println(err)
+					w.WriteHeader(http.StatusInternalServerError)
+				} else {
+					vid.updateTime = time.Now()
+					if sizeInKb == -1 {
+						vid.async, err = videoUtils.DownloadBest(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext))
+					} else {
+						vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext), sizeInKb/1024)
+					}
+					if err != nil {
+						fmt.Println(err)
+						w.WriteHeader(http.StatusInternalServerError)
+					}
+					json.NewEncoder(w).Encode(vid)
+				}
 			}
 		}
 	}
