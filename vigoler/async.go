@@ -19,7 +19,12 @@ type WaitAble interface {
 	Wait() error
 	Stop() error
 }
+type CancelError struct {
+}
 
+func (ce *CancelError) Error() string {
+	return "The async was cancel"
+}
 func createAsyncWaitAble(waitAble WaitAble) Async {
 	return Async{wa: waitAble, isFinish: false, isStopped: false}
 }
