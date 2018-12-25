@@ -79,7 +79,9 @@ func addIndexToFileName(name string) string {
 func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb, sizeSplitThreshold, maxTimeInSec, timeSplitThreshold int, liveVideoCallback LiveVideoCallback, data interface{}) (*Async, error) {
 	var wg sync.WaitGroup
 	var wa multipleWaitAble
-	async := CreateAsyncWaitGroup(&wg, &wa)
+	var lastResult interface{} = nil
+	var lastErr error = nil
+	lastWarn := ""
 	lData := data
 	lLiveVideoCallback := liveVideoCallback
 	waitForVideoToDownload := func(fAsync *Async, output string) {
@@ -89,16 +91,12 @@ func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb,
 		if lLiveVideoCallback != nil {
 			lLiveVideoCallback(lData, output, fAsync)
 		}
-		if err != nil {
-			async.SetResult(nil, err, warn)
-		} else {
-			async.SetResult(nil, nil, warn)
-		}
+		lastResult, lastErr, lastWarn = nil, err, warn
 	}
 	downloadVideo := func(url string, setting DownloadSettings, output string) {
 		fAsync, err := vu.Ffmpeg.Download(url, setting, output)
 		if err != nil {
-			async.SetResult(nil, err, "")
+			lastResult, lastErr, lastWarn = nil, err, ""
 		} else {
 			wg.Add(1)
 			wa.add(fAsync)
@@ -110,11 +108,19 @@ func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb,
 		downloadVideo(url, setting, output)
 	}
 	fAsync, err := vu.Ffmpeg.Download(*url, DownloadSettings{CallbackBeforeSplit: splitCallback, MaxSizeInKb: maxSizeInKb, MaxTimeInSec: maxTimeInSec, SizeSplitThreshold: sizeSplitThreshold, TimeSplitThreshold: timeSplitThreshold}, *outputFile)
+	var wga sync.WaitGroup
+	async := CreateAsyncWaitGroup(&wga, &wa)
 	if err != nil {
 		return nil, err
 	} else {
 		wg.Add(1)
 		wa.add(fAsync)
+		wga.Add(1)
+		go func() {
+			wg.Wait()
+			async.SetResult(lastResult, lastErr, lastWarn)
+			wga.Done()
+		}()
 		go waitForVideoToDownload(fAsync, *outputFile)
 	}
 	return &async, nil

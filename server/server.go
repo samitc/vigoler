@@ -242,22 +242,20 @@ func checkFileDownloaded(w http.ResponseWriter, r *http.Request) {
 	if vid == nil {
 		w.WriteHeader(http.StatusNotFound)
 	} else {
-		if vid.async == nil {
-			w.WriteHeader(http.StatusBadRequest)
+		vid.updateTime = time.Now()
+		if vid.async == nil || vid.async.WillBlock() {
+			w.WriteHeader(http.StatusAccepted)
+			json.NewEncoder(w).Encode(vid)
 		} else {
-			if vid.async.WillBlock() {
-				w.WriteHeader(http.StatusAccepted)
-				json.NewEncoder(w).Encode(vid)
+			_, err, _ := vid.async.Get()
+			if !vid.isLogged {
+				fmt.Print(vid)
+				vid.isLogged = true
+			}
+			if err != nil {
+				writeErrorToClient(w, err)
 			} else {
-				_, err, _ := vid.async.Get()
-				if !vid.isLogged {
-					fmt.Print(vid)
-				}
-				if err != nil {
-					writeErrorToClient(w, err)
-				} else {
-					json.NewEncoder(w).Encode(vid)
-				}
+				json.NewEncoder(w).Encode(vid)
 			}
 		}
 	}
