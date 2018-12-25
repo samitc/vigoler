@@ -35,6 +35,7 @@ type video struct {
 	Ext        string           `json:"ext"`
 	IsLive     bool             `json:"is_live"`
 	Ids        []string         `json:"ids,omitempty"`
+	parentId   string           `json:"-"`
 	videoUrl   vigoler.VideoUrl `json:"-"`
 	async      *vigoler.Async   `json:"-"`
 	updateTime time.Time        `json:"-"`
@@ -59,6 +60,19 @@ func serverCleaner() {
 				err := v.async.Stop()
 				if err != nil {
 					fmt.Println(err)
+				}
+			}
+			if v.parentId != "" {
+				if val, ok := videosMap[v.parentId]; ok {
+					i := 0
+					size := len(val.Ids)
+					for ; i < size; i++ {
+						if v.ID == val.Ids[i] {
+							break
+						}
+					}
+					val.Ids[i] = val.Ids[size-1]
+					val.Ids = val.Ids[:size-1]
 				}
 			}
 			err := os.Remove(vigoler.ValidateFileName(v.Name + "." + v.Ext))
@@ -149,7 +163,7 @@ func downloadVideoLive(w http.ResponseWriter, vid *video) {
 							name := fileName[:len(fileName)-(len(ext)+1)]
 							id := createId()
 							vid.Ids = append(vid.Ids, id)
-							videosMap[id] = &video{Name: name, Ext: ext, IsLive: false, ID: id, updateTime: time.Now(), async: async}
+							videosMap[id] = &video{Name: name, Ext: ext, IsLive: false, ID: id, updateTime: time.Now(), async: async, parentId: vid.ID}
 						}
 					}
 					vid.async, err = videoUtils.LiveDownload(res.(*string), &fileName, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit, fileDownloadedCallback, vid)
@@ -249,7 +263,7 @@ func checkFileDownloaded(w http.ResponseWriter, r *http.Request) {
 		} else {
 			_, err, _ := vid.async.Get()
 			if !vid.isLogged {
-				fmt.Print(vid)
+				fmt.Println(vid)
 				vid.isLogged = true
 			}
 			if err != nil {
