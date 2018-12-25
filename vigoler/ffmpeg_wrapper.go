@@ -26,7 +26,7 @@ func CreateFfmpegWrapper() FFmpegWrapper {
 	return FFmpegWrapper{app: externalApp{"ffmpeg"}}
 }
 func beforeStartWork(line string) bool {
-	return line[:len(line)-1] == "Press [q] to stop, [?] for help"
+	return strings.HasPrefix(line, "Press [q] to stop, [?] for help")
 }
 func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 	finalArgs := make([]string, 0, len(input)*2+3)
