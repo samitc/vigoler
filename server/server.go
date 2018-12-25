@@ -18,6 +18,17 @@ import (
 	"time"
 )
 
+const (
+	secondsPerMinute       = 60
+	secondsPerHour         = 60 * secondsPerMinute
+	secondsPerDay          = 24 * secondsPerHour
+	unixToInternal   int64 = (1969*365 + 1969/4 - 1969/100 + 1969/400) * secondsPerDay
+)
+
+var (
+	MaxTime = time.Unix(1<<63-1-unixToInternal, 999999999)
+)
+
 type video struct {
 	ID         string           `json:"id"`
 	Name       string           `json:"name"`
@@ -92,7 +103,7 @@ func extractLiveParameter() (err error, maxSizeInKb, sizeSplit, maxTimeInSec, ti
 	if err != nil {
 		return
 	}
-	sizeSplit, err = validateInt(os.Getenv("VIGOLER_LIVE_SPLIT_Size"))
+	sizeSplit, err = validateInt(os.Getenv("VIGOLER_LIVE_SPLIT_SIZE"))
 	if err != nil {
 		return
 	}
@@ -166,6 +177,12 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 				downloadVideoLive(w, vid)
 			} else {
 				sizeInKb, err := validateInt(os.Getenv("VIGOLER_MAX_FILE_SIZE"))
+				if sizeInKb < 1024 {
+					//TODO: fix this by making the download function to take size as KB instead of MB
+					fmt.Println("Can not set max file size to be less then a mega byte")
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
 				if err != nil {
 					fmt.Println(err)
 					w.WriteHeader(http.StatusInternalServerError)
@@ -225,17 +242,23 @@ func checkFileDownloaded(w http.ResponseWriter, r *http.Request) {
 	if vid == nil {
 		w.WriteHeader(http.StatusNotFound)
 	} else {
-		if vid.async == nil || vid.async.WillBlock() {
-			w.WriteHeader(http.StatusAccepted)
-		}
-		_, err, _ := vid.async.Get()
-		if !vid.isLogged {
-			fmt.Print(vid)
-		}
-		if err != nil {
-			writeErrorToClient(w, err)
+		if vid.async == nil {
+			w.WriteHeader(http.StatusBadRequest)
 		} else {
-			json.NewEncoder(w).Encode(vid)
+			if vid.async.WillBlock() {
+				w.WriteHeader(http.StatusAccepted)
+				json.NewEncoder(w).Encode(vid)
+			} else {
+				_, err, _ := vid.async.Get()
+				if !vid.isLogged {
+					fmt.Print(vid)
+				}
+				if err != nil {
+					writeErrorToClient(w, err)
+				} else {
+					json.NewEncoder(w).Encode(vid)
+				}
+			}
 		}
 	}
 }
@@ -260,9 +283,9 @@ func download(w http.ResponseWriter, r *http.Request) {
 				fmt.Println(err)
 				w.WriteHeader(http.StatusInternalServerError)
 			} else {
-				vid.updateTime = time.Now()
+				defer func() { vid.updateTime = time.Now() }()
+				vid.updateTime = MaxTime
 				w.Header().Set("Content-Disposition", "attachment; filename=\""+fileName+"\"")
-				w.Header().Set("Content-Type", r.Header.Get("Content-Type"))
 				fs, err := file.Stat()
 				if err != nil {
 					fmt.Println(err)
