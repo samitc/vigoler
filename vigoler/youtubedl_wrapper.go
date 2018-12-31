@@ -28,10 +28,11 @@ type Format struct {
 	MaxFileSizeInMb    int
 }
 type VideoUrl struct {
-	Name   string
-	IsLive bool
-	Ext    string
-	url    string
+	Name    string
+	IsLive  bool
+	Ext     string
+	Formats []Format
+	url     string
 }
 type BadFormatError struct {
 	Video  VideoUrl
@@ -47,7 +48,7 @@ func (e *BadFormatError) Error() string {
 	return fmt.Sprintf("Bad format %s for url %s", e.Format, e.Video.url)
 }
 func (e *HttpError) Error() string {
-	return fmt.Sprintf("Http errer while requested %s. error message is:", e.Video, e.ErrorMessage)
+	return fmt.Sprintf("Http errer while requested %s. error message is: %s", e.Video, e.ErrorMessage)
 }
 func (e *BadFormatError) Type() string {
 	return "Bad format"
@@ -126,7 +127,7 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 		const TITLE_NAME = "title"
 		const EXT_NAME = "ext"
 		var videos []VideoUrl
-		var err error = nil
+		var err error
 		warnOutput := ""
 		videoIndex := 0
 		preWarnIndex := -1
@@ -156,7 +157,7 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 			if hasWarn {
 				warnVideoIndex := videoIndex
 				if preWarnIndex != -1 {
-					warnVideoIndex -= 1
+					warnVideoIndex--
 				}
 				warnOutput += "WARN IN VIDEO NUMBER: " + strconv.Itoa(warnVideoIndex) + ". " + s
 				if str.Index(s, "Unable to download webpage: HTTP Error 503") != -1 {
@@ -190,7 +191,7 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string, status
 		const DESTINATION = "Destination:"
 		var dest = ""
 		warn := ""
-		var err error = nil
+		var err error
 		extractLineFromString := func(partString string) (nextPartString, fullString string) {
 			partString = str.Replace(partString, "\r", "\n", 1)
 			if i := str.Index(partString, "\n"); i >= 0 {
@@ -222,7 +223,7 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string, status
 					}
 				} else {
 					if status != nil {
-						//0.0% of 1.07GiB at 241.96KiB/s ETA 01:16:55^C
+						//0.0% of 1.07GiB at 241.96KiB/s ETA 01:16:55
 						perPos := str.Index(s, "%")
 						startPerPos := str.Index(s, "]") + 1
 						temp := str.Replace(s[startPerPos:perPos], " ", "", -1)
@@ -269,18 +270,9 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string, status
 func (youdown *YoutubeDlWrapper) Download(url VideoUrl, format Format, status DownloadStatus) (*Async, error) {
 	return youdown.downloadUrl(url, fillFormat(format).format, status)
 }
-func CreateBestAudioFormat() Format {
-	return Format{format: "bestaudio"}
-}
-func CreateBestVideoFormat() Format {
-	return Format{format: "bestvideo"}
-}
-func CreateBestFormat() Format {
-	return Format{format: "best"}
-}
-func (youdown *YoutubeDlWrapper) getRealVideoUrl(url VideoUrl, format string) (*Async, error) {
+func (youdown *YoutubeDlWrapper) getRealVideoUrl(url VideoUrl, format Format) (*Async, error) {
 	ctx := context.Background()
-	wa, output, err := youdown.app.runCommandChan(ctx, "-g", "-f", format, url.url)
+	wa, output, err := youdown.app.runCommandChan(ctx, "-g", "-f", fillFormat(format).format, url.url)
 	if err != nil {
 		return nil, err
 	}
@@ -298,6 +290,11 @@ func (youdown *YoutubeDlWrapper) getRealVideoUrl(url VideoUrl, format string) (*
 	}(&async, &output)
 	return &async, nil
 }
-func (youdown *YoutubeDlWrapper) GetRealVideoUrl(url VideoUrl, format Format) (*Async, error) {
-	return youdown.getRealVideoUrl(url, fillFormat(format).format)
+func GetBestFormat(formats []Format, needVideo, needAudio bool) Format {
+	for i := len(formats) - 1; i >= 0; i++ {
+		if formats[i].hasVideo == needVideo && formats[i].hasAudio == needAudio {
+			return formats[i]
+		}
+	}
+	return formats[len(formats)-1]
 }

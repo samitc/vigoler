@@ -79,8 +79,8 @@ func addIndexToFileName(name string) string {
 func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb, sizeSplitThreshold, maxTimeInSec, timeSplitThreshold int, liveVideoCallback LiveVideoCallback, data interface{}) (*Async, error) {
 	var wg sync.WaitGroup
 	var wa multipleWaitAble
-	var lastResult interface{} = nil
-	var lastErr error = nil
+	var lastResult interface{}
+	var lastErr error
 	lastWarn := ""
 	lData := data
 	lLiveVideoCallback := liveVideoCallback
@@ -112,28 +112,27 @@ func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb,
 	async := CreateAsyncWaitGroup(&wga, &wa)
 	if err != nil {
 		return nil, err
-	} else {
-		wg.Add(1)
-		wa.add(fAsync)
-		wga.Add(1)
-		go func() {
-			wg.Wait()
-			async.SetResult(lastResult, lastErr, lastWarn)
-			wga.Done()
-		}()
-		go waitForVideoToDownload(fAsync, *outputFile)
 	}
+	wg.Add(1)
+	wa.add(fAsync)
+	wga.Add(1)
+	go func() {
+		wg.Wait()
+		async.SetResult(lastResult, lastErr, lastWarn)
+		wga.Done()
+	}()
+	go waitForVideoToDownload(fAsync, *outputFile)
 	return &async, nil
 }
 func (vu *VideoUtils) DownloadBestAndMerge(url VideoUrl, output string) (*Async, error) {
-	video, vErr := vu.Youtube.Download(url, CreateBestVideoFormat(), nil)
-	audio, aErr := vu.Youtube.Download(url, CreateBestAudioFormat(), nil)
+	video, vErr := vu.Youtube.Download(url, GetBestFormat(url.Formats, true, false), nil)
+	audio, aErr := vu.Youtube.Download(url, GetBestFormat(url.Formats, false, true), nil)
 	if vErr != nil || aErr != nil {
 		if vErr != nil {
 			return nil, vErr
-		} else {
-			return nil, aErr
 		}
+		return nil, aErr
+
 	}
 	var wg sync.WaitGroup
 	var wa multipleWaitAble
@@ -194,50 +193,48 @@ func (vu *VideoUtils) download(url VideoUrl, output string, format Format, statu
 	async := CreateAsyncFromAsyncAsWaitAble(&wg, yAsync)
 	if err != nil {
 		return nil, err
-	} else {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			fileOutput, err, warn := yAsync.Get()
-			newOutput, nErr, nWarn := end(err, warn)
-			if newOutput != "" {
-				fileOutput = &newOutput
-				err = nErr
-				warn = nWarn
-			}
-			if err != nil {
-				async.SetResult(nil, err, warn)
-			} else {
-				os.Rename(*fileOutput.(*string), output)
-				async.SetResult(nil, nil, warn)
-			}
-		}()
 	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		fileOutput, err, warn := yAsync.Get()
+		newOutput, nErr, nWarn := end(err, warn)
+		if newOutput != "" {
+			fileOutput = &newOutput
+			err = nErr
+			warn = nWarn
+		}
+		if err != nil {
+			async.SetResult(nil, err, warn)
+		} else {
+			os.Rename(*fileOutput.(*string), output)
+			async.SetResult(nil, nil, warn)
+		}
+	}()
+
 	return &async, nil
 }
 func (vu *VideoUtils) DownloadBest(url VideoUrl, output string) (*Async, error) {
-	return vu.download(url, output, CreateBestFormat(), nil, nil)
+	return vu.download(url, output, GetBestFormat(url.Formats, true, true), nil, nil)
 }
 func (vu *VideoUtils) DownloadBestMaxSize(url VideoUrl, output string, sizeInMb int) (*Async, error) {
-	format := CreateBestFormat()
+	format := GetBestFormat(url.Formats, true, true)
 	format.MaxFileSizeInMb = sizeInMb
 	endCallback := func(err error, warn string) (string, error, string) {
 		var async *Async
-		if _, ok := err.(*BadFormatError); ok {
-			async, err = vu.Youtube.Download(url, CreateBestFormat(), func(url VideoUrl, percent, size float32) {
-				if (int)(size) > sizeInMb {
-					async.Stop()
-				}
-			})
-			if err != nil {
-				return "err", err, ""
-			} else {
-				fileOutput, err, warn := async.Get()
-				return *(fileOutput.(*string)), err, warn
-			}
-		} else {
+		if _, ok := err.(*BadFormatError); !ok {
 			return "", err, ""
 		}
+		async, err = vu.Youtube.Download(url, GetBestFormat(url.Formats, true, true), func(url VideoUrl, percent, size float32) {
+			if (int)(size) > sizeInMb {
+				async.Stop()
+			}
+		})
+		if err != nil {
+			return "err", err, ""
+		}
+		fileOutput, err, warn := async.Get()
+		return *(fileOutput.(*string)), err, warn
 	}
 	return vu.download(url, output, format, nil, endCallback)
 }
