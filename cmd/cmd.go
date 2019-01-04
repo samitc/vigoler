@@ -3,11 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	. "github.com/samitc/vigoler/vigoler"
 	"os"
 	"runtime"
 	"strings"
 	"sync"
+
+	. "github.com/samitc/vigoler/vigoler"
 )
 
 type empty struct{}
@@ -63,7 +64,7 @@ func liveDownload(videos <-chan outputVideo, videoUtils *VideoUtils, wg *sync.Wa
 	var pendingAsync []*Async
 	var filesName []string
 	for video := range videos {
-		async, err := videoUtils.Youtube.GetRealVideoUrl(video.video, CreateBestFormat())
+		async, err := videoUtils.Youtube.GetRealVideoUrl(video.video, GetBestFormat(video.video.Formats, true, true))
 		if err != nil {
 			fmt.Println(err)
 		} else {

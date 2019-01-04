@@ -4,10 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/handlers"
-	"github.com/gorilla/mux"
-	"github.com/samitc/vigoler/vigoler"
-	"github.com/segmentio/ksuid"
 	"io"
 	"log"
 	"net/http"
@@ -16,6 +12,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gorilla/handlers"
+	"github.com/gorilla/mux"
+	"github.com/samitc/vigoler/vigoler"
+	"github.com/segmentio/ksuid"
 )
 
 const (

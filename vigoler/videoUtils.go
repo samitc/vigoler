@@ -125,8 +125,8 @@ func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb,
 	return &async, nil
 }
 func (vu *VideoUtils) DownloadBestAndMerge(url VideoUrl, output string) (*Async, error) {
-	video, vErr := vu.Youtube.Download(url, GetBestFormat(url.Formats, true, false), nil)
-	audio, aErr := vu.Youtube.Download(url, GetBestFormat(url.Formats, false, true), nil)
+	video, vErr := vu.Youtube.DownloadVideoUrl(url, GetBestFormat(url.Formats, true, false), nil)
+	audio, aErr := vu.Youtube.DownloadVideoUrl(url, GetBestFormat(url.Formats, false, true), nil)
 	if vErr != nil || aErr != nil {
 		if vErr != nil {
 			return nil, vErr
@@ -187,54 +187,89 @@ func (vu *VideoUtils) DownloadBestAndMerge(url VideoUrl, output string) (*Async,
 	}(video, audio, output, url)
 	return &async, nil
 }
-func (vu *VideoUtils) download(url VideoUrl, output string, format Format, status DownloadStatus, end onDownloadEnd) (*Async, error) {
+func (vu *VideoUtils) findBestFormat(url VideoUrl, sizeInBytes int, formats []Format) (*Async, error) {
 	var wg sync.WaitGroup
-	yAsync, err := vu.Youtube.Download(url, format, status)
-	async := CreateAsyncFromAsyncAsWaitAble(&wg, yAsync)
-	if err != nil {
-		return nil, err
-	}
+	async := CreateAsyncWaitGroup(&wg, nil)
 	wg.Add(1)
-	go func() {
+	go func(async *Async, wg *sync.WaitGroup) {
 		defer wg.Done()
-		fileOutput, err, warn := yAsync.Get()
-		newOutput, nErr, nWarn := end(err, warn)
-		if newOutput != "" {
-			fileOutput = &newOutput
-			err = nErr
-			warn = nWarn
+		var err error
+		for _, format := range formats {
+			if !async.isStopped {
+				var as *Async
+				as, err = vu.Youtube.DownloadVideoUrl(url, format, func(url VideoUrl, prec, sizeInMb float32) {
+					if (int)(sizeInMb*1024*1024) > sizeInBytes {
+						as.Stop()
+					}
+				})
+				async.async = as
+				if err != nil {
+					async.SetResult(nil, err, "")
+					break
+				} else {
+					var dest interface{}
+					var warn string
+					dest, err, warn = as.Get()
+					if err != nil {
+						if _, ok := err.(*CancelError); !ok {
+							async.SetResult(nil, err, warn)
+						}
+					} else {
+						async.SetResult(dest.(*string), nil, warn)
+					}
+				}
+			}
 		}
-		if err != nil {
-			async.SetResult(nil, err, warn)
-		} else {
-			os.Rename(*fileOutput.(*string), output)
-			async.SetResult(nil, nil, warn)
-		}
-	}()
-
+	}(&async, &wg)
 	return &async, nil
 }
-func (vu *VideoUtils) DownloadBest(url VideoUrl, output string) (*Async, error) {
-	return vu.download(url, output, GetBestFormat(url.Formats, true, true), nil, nil)
-}
-func (vu *VideoUtils) DownloadBestMaxSize(url VideoUrl, output string, sizeInMb int) (*Async, error) {
-	format := GetBestFormat(url.Formats, true, true)
-	format.MaxFileSizeInMb = sizeInMb
-	endCallback := func(err error, warn string) (string, error, string) {
-		var async *Async
-		if _, ok := err.(*BadFormatError); !ok {
-			return "", err, ""
-		}
-		async, err = vu.Youtube.Download(url, GetBestFormat(url.Formats, true, true), func(url VideoUrl, percent, size float32) {
-			if (int)(size) > sizeInMb {
-				async.Stop()
-			}
-		})
-		if err != nil {
-			return "err", err, ""
-		}
-		fileOutput, err, warn := async.Get()
-		return *(fileOutput.(*string)), err, warn
+func (vu *VideoUtils) downloadBestFormats(url VideoUrl, output string, formats []Format, sizeInBytes int) (*Async, error) {
+	var async *Async
+	var err error
+	if len(formats) == 1 {
+		async, err = vu.Youtube.DownloadVideoUrl(url, formats[0], nil)
+	} else {
+		async, err = vu.findBestFormat(url, sizeInBytes, formats)
 	}
-	return vu.download(url, output, format, nil, endCallback)
+	var mainAsync Async
+	if err != nil {
+		var wg sync.WaitGroup
+		wg.Add(1)
+		mainAsync = CreateAsyncFromAsyncAsWaitAble(&wg, async)
+		go func(resAsync, downloadAsync *Async, wg *sync.WaitGroup) {
+			defer wg.Done()
+			dest, err, warn := downloadAsync.Get()
+			if err != nil {
+				resAsync.SetResult(nil, err, warn)
+			} else {
+				os.Rename(*dest.(*string), output)
+			}
+		}(&mainAsync, async, &wg)
+	}
+	return &mainAsync, err
+}
+func (vu *VideoUtils) DownloadBest(url VideoUrl, output string) (*Async, error) {
+	return vu.downloadBestFormats(url, output, GetFormatsOrder(url.Formats, true, true)[0:0], -1)
+}
+func (vu *VideoUtils) DownloadBestMaxSize(url VideoUrl, output string, sizeInBytes int) (*Async, error) {
+	formats := GetFormatsOrder(url.Formats, true, true)
+	var fIndex = 0
+	var lastKnownIndex = -1
+	if sizeInBytes != -1 {
+		for i, f := range formats {
+			if f.fileSize == -1 {
+				lastKnownIndex = i
+			} else {
+				if (int)(f.fileSize) < sizeInBytes {
+					fIndex = i
+					break
+				}
+				lastKnownIndex = -1
+			}
+		}
+	}
+	if lastKnownIndex == -1 {
+		lastKnownIndex = fIndex
+	}
+	return vu.downloadBestFormats(url, output, formats[lastKnownIndex:fIndex], sizeInBytes)
 }
