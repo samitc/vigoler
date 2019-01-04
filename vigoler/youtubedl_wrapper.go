@@ -19,19 +19,20 @@ type YoutubeDlWrapper struct {
 	random rand.Rand
 }
 type Format struct {
-	format             string
-	Number             int
-	FileFormat         string
-	Resolution         string
-	Description        string
-	hasVideo, hasAudio bool
-	MaxFileSizeInMb    int
+	url      string
+	formatID string
+	// size of the file in bytes or -1 if the data is not available.
+	fileSize float64
+	ext      string
+	hasVideo bool
+	hasAudio bool
 }
 type VideoUrl struct {
-	Name   string
-	IsLive bool
-	Ext    string
-	url    string
+	Name    string
+	IsLive  bool
+	Ext     string
+	Formats []Format
+	url     string
 }
 type BadFormatError struct {
 	Video  VideoUrl
@@ -47,7 +48,7 @@ func (e *BadFormatError) Error() string {
 	return fmt.Sprintf("Bad format %s for url %s", e.Format, e.Video.url)
 }
 func (e *HttpError) Error() string {
-	return fmt.Sprintf("Http errer while requested %s. error message is:", e.Video, e.ErrorMessage)
+	return fmt.Sprintf("Http error while requested %s. error message is: %s", e.Video, e.ErrorMessage)
 }
 func (e *BadFormatError) Type() string {
 	return "Bad format"
@@ -55,60 +56,31 @@ func (e *BadFormatError) Type() string {
 func (e *HttpError) Type() string {
 	return "Http error"
 }
-func fillFormat(format Format) Format {
-	if format.format == "" {
-		format.format = strconv.Itoa(format.Number)
-	}
-	if format.MaxFileSizeInMb > 0 {
-		format.format += "[filesize<" + strconv.Itoa(format.MaxFileSizeInMb) + "m]"
-	}
-	return format
-}
 func CreateYoutubeDlWrapper() YoutubeDlWrapper {
 	s1 := rand.NewSource(time.Now().UnixNano())
 	r1 := rand.New(s1)
 	wrapper := YoutubeDlWrapper{app: externalApp{appLocation: "youtube-dl"}, random: *r1}
 	return wrapper
 }
-func (youdown *YoutubeDlWrapper) GetFormats(url VideoUrl) (*Async, error) {
-	ctx := context.Background()
-	wa, output, err := youdown.app.runCommandChan(ctx, "-F", url.url)
-	if err != nil {
-		return nil, err
-	}
-	var wg sync.WaitGroup
-	wg.Add(1)
-	async := CreateAsyncWaitGroup(&wg, wa)
-	go func(async *Async, output *<-chan string) {
-		defer async.wg.Done()
-		isHeader := true
-		var formats []Format
-		var formatCodeStart, extensionStart, resolutionStart, noteStart int
-		for s := range *output {
-			if s[0] == '[' {
-				continue
-			}
-			if isHeader {
-				formatCodeStart = 0
-				extensionStart = str.Index(s, "extension")
-				resolutionStart = str.Index(s, "resolution")
-				noteStart = str.Index(s, "note")
-				isHeader = false
-			} else {
-				num, _ := strconv.Atoi(str.Trim(s[formatCodeStart:extensionStart], " "))
-				hasVideo := true
-				hasAudio := true
-				if str.Index(s, "video only") != -1 {
-					hasAudio = false
-				} else if str.Index(s, "audio only") != -1 {
-					hasVideo = false
-				}
-				formats = append(formats, Format{Number: num, FileFormat: str.Trim(s[extensionStart:resolutionStart], " "), Resolution: str.Trim(s[resolutionStart:noteStart], " "), hasVideo: hasVideo, hasAudio: hasAudio, Description: s})
-			}
+func readFormats(dMap map[string]interface{}) []Format {
+	listOfFormats := dMap["formats"].([]interface{})
+	formats := make([]Format, 0, len(listOfFormats))
+	for _, format := range listOfFormats {
+		formatMap := format.(map[string]interface{})
+		var fileSize float64
+		if formatMap["filesize"] == nil {
+			fileSize = -1
+		} else {
+			fileSize = formatMap["filesize"].(float64)
 		}
-		async.SetResult(&formats, nil, "")
-	}(&async, &output)
-	return &async, nil
+		url := formatMap["url"].(string)
+		formatID, _ := formatMap["format_id"].(string)
+		ext := formatMap["ext"].(string)
+		hasVideo := formatMap["vcodec"] != "none"
+		hasAudio := formatMap["acodec"] != "none"
+		formats = append(formats, Format{fileSize: fileSize, url: url, formatID: formatID, ext: ext, hasVideo: hasVideo, hasAudio: hasAudio})
+	}
+	return formats
 }
 func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 	ctx := context.Background()
@@ -126,7 +98,7 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 		const TITLE_NAME = "title"
 		const EXT_NAME = "ext"
 		var videos []VideoUrl
-		var err error = nil
+		var err error
 		warnOutput := ""
 		videoIndex := 0
 		preWarnIndex := -1
@@ -150,13 +122,13 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 					} else {
 						isAlive = dMap[ALIVE_NAME].(bool)
 					}
-					videos = append(videos, VideoUrl{Ext: dMap[EXT_NAME].(string), url: dMap[URL_NAME].(string), Name: dMap[TITLE_NAME].(string), IsLive: isAlive})
+					videos = append(videos, VideoUrl{Ext: dMap[EXT_NAME].(string), url: dMap[URL_NAME].(string), Name: dMap[TITLE_NAME].(string), IsLive: isAlive, Formats: readFormats(dMap)})
 				}
 			}
 			if hasWarn {
 				warnVideoIndex := videoIndex
 				if preWarnIndex != -1 {
-					warnVideoIndex -= 1
+					warnVideoIndex--
 				}
 				warnOutput += "WARN IN VIDEO NUMBER: " + strconv.Itoa(warnVideoIndex) + ". " + s
 				if str.Index(s, "Unable to download webpage: HTTP Error 503") != -1 {
@@ -172,13 +144,13 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 	}(&async, &output, url)
 	return &async, nil
 }
-func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string, status DownloadStatus) (*Async, error) {
+func (youdown *YoutubeDlWrapper) DownloadVideoUrl(url VideoUrl, format Format, status DownloadStatus) (*Async, error) {
 	if url.IsLive {
 		return nil, errors.New("can not download live video") //TODO: make new error type
 	}
 	ctx := context.Background()
 	outputFileName := strconv.Itoa(youdown.random.Int())
-	wa, _, output, err := youdown.app.runCommand(ctx, true, true, false, "-o", outputFileName, "-f", format, url.url)
+	wa, _, output, err := youdown.app.runCommand(ctx, true, true, false, "-o", outputFileName, "-f", format.formatID, url.url)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +162,7 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string, status
 		const DESTINATION = "Destination:"
 		var dest = ""
 		warn := ""
-		var err error = nil
+		var err error
 		extractLineFromString := func(partString string) (nextPartString, fullString string) {
 			partString = str.Replace(partString, "\r", "\n", 1)
 			if i := str.Index(partString, "\n"); i >= 0 {
@@ -222,7 +194,7 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string, status
 					}
 				} else {
 					if status != nil {
-						//0.0% of 1.07GiB at 241.96KiB/s ETA 01:16:55^C
+						//0.0% of 1.07GiB at 241.96KiB/s ETA 01:16:55
 						perPos := str.Index(s, "%")
 						startPerPos := str.Index(s, "]") + 1
 						temp := str.Replace(s[startPerPos:perPos], " ", "", -1)
@@ -263,24 +235,12 @@ func (youdown *YoutubeDlWrapper) downloadUrl(url VideoUrl, format string, status
 			dest = ""
 		}
 		async.SetResult(&dest, err, warn)
-	}(url, &async, &output, format, status)
+	}(url, &async, &output, format.formatID, status)
 	return &async, nil
 }
-func (youdown *YoutubeDlWrapper) Download(url VideoUrl, format Format, status DownloadStatus) (*Async, error) {
-	return youdown.downloadUrl(url, fillFormat(format).format, status)
-}
-func CreateBestAudioFormat() Format {
-	return Format{format: "bestaudio"}
-}
-func CreateBestVideoFormat() Format {
-	return Format{format: "bestvideo"}
-}
-func CreateBestFormat() Format {
-	return Format{format: "best"}
-}
-func (youdown *YoutubeDlWrapper) getRealVideoUrl(url VideoUrl, format string) (*Async, error) {
+func (youdown *YoutubeDlWrapper) GetRealVideoUrl(url VideoUrl, format Format) (*Async, error) {
 	ctx := context.Background()
-	wa, output, err := youdown.app.runCommandChan(ctx, "-g", "-f", format, url.url)
+	wa, output, err := youdown.app.runCommandChan(ctx, "-g", "-f", format.formatID, url.url)
 	if err != nil {
 		return nil, err
 	}
@@ -298,6 +258,19 @@ func (youdown *YoutubeDlWrapper) getRealVideoUrl(url VideoUrl, format string) (*
 	}(&async, &output)
 	return &async, nil
 }
-func (youdown *YoutubeDlWrapper) GetRealVideoUrl(url VideoUrl, format Format) (*Async, error) {
-	return youdown.getRealVideoUrl(url, fillFormat(format).format)
+func GetBestFormat(formats []Format, needVideo, needAudio bool) Format {
+	return GetFormatsOrder(formats, needVideo, needAudio)[0]
+}
+
+// GetFormatsOrder Return the formats in descending from the best format to the worst format.
+// needVideo and needAudio determinate if the format contain video and audio respectively.
+// needVideo and needAudio can be both true.
+func GetFormatsOrder(formats []Format, needVideo, needAudio bool) []Format {
+	oFormats := make([]Format, 0)
+	for i := len(formats) - 1; i >= 0; i-- {
+		if formats[i].hasVideo == needVideo && formats[i].hasAudio == needAudio {
+			oFormats = append(oFormats, formats[i])
+		}
+	}
+	return oFormats
 }

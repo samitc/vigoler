@@ -41,6 +41,7 @@ func (async *Async) SetResult(result interface{}, err error, warningOutput strin
 	async.isFinish = true
 }
 func (async *Async) Stop() error {
+	async.isStopped = true
 	if async.async != nil {
 		err := async.async.Stop()
 		if err != nil {
@@ -48,7 +49,6 @@ func (async *Async) Stop() error {
 		}
 	}
 	if async.wa != nil {
-		async.isStopped = true
 		return async.wa.Stop()
 	}
 	return nil
