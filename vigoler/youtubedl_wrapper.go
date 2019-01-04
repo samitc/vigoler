@@ -77,7 +77,7 @@ func readFormats(dMap map[string]interface{}) []Format {
 		formatID, _ := formatMap["format_id"].(string)
 		ext := formatMap["ext"].(string)
 		hasVideo := formatMap["vcodec"] != "none"
-		hasAudio := formatMap["acoded"] != "none"
+		hasAudio := formatMap["acodec"] != "none"
 		formats = append(formats, Format{fileSize: fileSize, url: url, formatID: formatID, ext: ext, hasVideo: hasVideo, hasAudio: hasAudio})
 	}
 	return formats
@@ -267,7 +267,7 @@ func GetBestFormat(formats []Format, needVideo, needAudio bool) Format {
 // needVideo and needAudio can be both true.
 func GetFormatsOrder(formats []Format, needVideo, needAudio bool) []Format {
 	oFormats := make([]Format, 0)
-	for i := len(formats) - 1; i >= 0; i++ {
+	for i := len(formats) - 1; i >= 0; i-- {
 		if formats[i].hasVideo == needVideo && formats[i].hasAudio == needAudio {
 			oFormats = append(oFormats, formats[i])
 		}

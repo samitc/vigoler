@@ -136,7 +136,7 @@ func downloadVideoLive(w http.ResponseWriter, vid *video) {
 	if strings.ToLower(os.Getenv("VIGOLER_SUPPORT_LIVE")) != "true" {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	} else {
-		async, err := videoUtils.Youtube.GetRealVideoUrl(vid.videoUrl, vigoler.CreateBestFormat())
+		async, err := videoUtils.Youtube.GetRealVideoUrl(vid.videoUrl, vigoler.GetBestFormat(vid.videoUrl.Formats, true, true))
 		if err != nil {
 			fmt.Println(err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -192,12 +192,6 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 				downloadVideoLive(w, vid)
 			} else {
 				sizeInKb, err := validateInt(os.Getenv("VIGOLER_MAX_FILE_SIZE"))
-				if sizeInKb < 1024 {
-					//TODO: fix this by making the download function to take size as KB instead of MB
-					fmt.Println("Can not set max file size to be less then a mega byte")
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
 				if err != nil {
 					fmt.Println(err)
 					w.WriteHeader(http.StatusInternalServerError)
@@ -206,7 +200,7 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 					if sizeInKb == -1 {
 						vid.async, err = videoUtils.DownloadBest(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext))
 					} else {
-						vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext), sizeInKb/1024)
+						vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext), sizeInKb*1024)
 					}
 					if err != nil {
 						fmt.Println(err)

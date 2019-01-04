@@ -232,18 +232,17 @@ func (vu *VideoUtils) downloadBestFormats(url VideoUrl, output string, formats [
 		async, err = vu.findBestFormat(url, sizeInBytes, formats)
 	}
 	var mainAsync Async
-	if err != nil {
+	if err == nil {
 		var wg sync.WaitGroup
 		wg.Add(1)
 		mainAsync = CreateAsyncFromAsyncAsWaitAble(&wg, async)
 		go func(resAsync, downloadAsync *Async, wg *sync.WaitGroup) {
 			defer wg.Done()
 			dest, err, warn := downloadAsync.Get()
-			if err != nil {
-				resAsync.SetResult(nil, err, warn)
-			} else {
+			if err == nil {
 				os.Rename(*dest.(*string), output)
 			}
+			resAsync.SetResult(nil, err, warn)
 		}(&mainAsync, async, &wg)
 	}
 	return &mainAsync, err
@@ -271,5 +270,5 @@ func (vu *VideoUtils) DownloadBestMaxSize(url VideoUrl, output string, sizeInByt
 	if lastKnownIndex == -1 {
 		lastKnownIndex = fIndex
 	}
-	return vu.downloadBestFormats(url, output, formats[lastKnownIndex:fIndex], sizeInBytes)
+	return vu.downloadBestFormats(url, output, formats[lastKnownIndex:fIndex+1], sizeInBytes)
 }
