@@ -163,19 +163,11 @@ func (youdown *YoutubeDlWrapper) DownloadVideoUrl(url VideoUrl, format Format, s
 		var dest = ""
 		warn := ""
 		var err error
-		extractLineFromString := func(partString string) (nextPartString, fullString string) {
-			partString = str.Replace(partString, "\r", "\n", 1)
-			if i := str.Index(partString, "\n"); i >= 0 {
-				i++
-				return partString[i:], partString[:i]
-			}
-			return partString, ""
-		}
 		fullS := ""
 		for s := range *output {
 			fullS += s
 			fullS, s = extractLineFromString(fullS)
-			if s != "" && s != "\n" {
+			if s != "" {
 				if -1 != str.Index(s, "ERROR") {
 					if s[:len(s)-1] == "ERROR: requested format not available" { // s contain also \n
 						err = &BadFormatError{Video: url, Format: format}
@@ -249,12 +241,14 @@ func (youdown *YoutubeDlWrapper) GetRealVideoUrl(url VideoUrl, format Format) (*
 	async := CreateAsyncWaitGroup(&wg, wa)
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
+		realVideoUrl := ""
 		for s := range *output {
-			if async.Result != nil {
+			if realVideoUrl != "" {
 				fmt.Println(s) //TODO: return error - should not happen
 			}
-			async.SetResult(&s, nil, "")
+			realVideoUrl = s
 		}
+		async.SetResult(&realVideoUrl, nil, "")
 	}(&async, &output)
 	return &async, nil
 }

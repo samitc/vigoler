@@ -6,9 +6,9 @@ import (
 )
 
 type Async struct {
-	Result         interface{}
-	Error          error
-	WarningsOutput string
+	result         interface{}
+	err            error
+	warningsOutput string
 	wg             *sync.WaitGroup
 	wa             WaitAble
 	isFinish       bool
@@ -35,9 +35,9 @@ func CreateAsyncFromAsyncAsWaitAble(wg *sync.WaitGroup, async *Async) Async {
 	return Async{wg: wg, wa: async.wa, isFinish: false, isStopped: false, async: async}
 }
 func (async *Async) SetResult(result interface{}, err error, warningOutput string) {
-	async.Result = result
-	async.Error = err
-	async.WarningsOutput = warningOutput
+	async.result = result
+	async.err = err
+	async.warningsOutput = warningOutput
 	async.isFinish = true
 }
 func (async *Async) Stop() error {
@@ -61,7 +61,11 @@ func (async *Async) Get() (interface{}, error, string) {
 		async.wa.Wait()
 		async.wa = nil
 	}
-	return async.Result, async.Error, async.WarningsOutput
+	err := async.err
+	if err == nil && async.isStopped {
+		err = &CancelError{}
+	}
+	return async.result, async.err, async.warningsOutput
 }
 func (async *Async) WillBlock() bool {
 	return !async.isFinish

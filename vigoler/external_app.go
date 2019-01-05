@@ -23,6 +23,8 @@ func (cwa *commandWaitAble) Wait() error {
 func (cwa *commandWaitAble) Stop() error {
 	return cwa.cmd.Process.Kill()
 }
+
+// TODO: remove option to get reader stream
 func (external *externalApp) runCommand(ctx context.Context, createChan bool, closeReader bool, readWithDelim bool, arg ...string) (WaitAble, io.ReadCloser, <-chan string, error) {
 	cmd := exec.CommandContext(ctx, external.appLocation, arg...)
 	var outputChannel chan string = nil
@@ -56,7 +58,7 @@ func (external *externalApp) runCommand(ctx context.Context, createChan bool, cl
 				} else {
 					buf := make([]byte, 128)
 					var n int
-					for ; err == nil; {
+					for err == nil {
 						n, err = reader.Read(buf)
 						if err == nil {
 							outChan <- string(buf[:n])
