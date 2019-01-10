@@ -308,6 +308,12 @@ func download(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(vid)
 	}
 }
+func waitAndExecute(timeEnv string, exec func()) {
+	exec()
+	seconds, _ := strconv.Atoi(timeEnv)
+	dur := time.Second * time.Duration(seconds)
+	time.Sleep(dur)
+}
 func main() {
 	you := vigoler.CreateYoutubeDlWrapper()
 	ff := vigoler.CreateFfmpegWrapper()
@@ -320,10 +326,16 @@ func main() {
 	router.HandleFunc("/videos/{ID}/download", download).Methods("GET")
 	go func() {
 		for true {
-			seconds, _ := strconv.Atoi(os.Getenv("VIGOLER_CLEANER_PERIODIC"))
-			dur := time.Second * time.Duration(seconds)
-			time.Sleep(dur)
-			serverCleaner()
+			waitAndExecute(os.Getenv("VIGOLER_CLEANER_PERIODIC"), serverCleaner)
+		}
+	}()
+	go func() {
+		for true {
+			if value, ok := os.LookupEnv("VIGOLER_YOUTUBEDL_UPDATE_PERIODIC"); ok {
+				waitAndExecute(value, you.UpdateYoutubeDl)
+			} else {
+				waitAndExecute(os.Getenv("VIGOLER_CLEANER_PERIODIC"), you.UpdateYoutubeDl)
+			}
 		}
 	}()
 	corsObj := handlers.AllowedOrigins([]string{os.Getenv("VIGOLER_ALLOW_ORIGIN")})

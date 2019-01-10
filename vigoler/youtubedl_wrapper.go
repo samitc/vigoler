@@ -62,6 +62,12 @@ func CreateYoutubeDlWrapper() YoutubeDlWrapper {
 	wrapper := YoutubeDlWrapper{app: externalApp{appLocation: "youtube-dl"}, random: *r1}
 	return wrapper
 }
+func (you *YoutubeDlWrapper) UpdateYoutubeDl() {
+	_, _, _, err := you.app.runCommand(context.Background(), false, true, true, "-U")
+	if err != nil {
+		fmt.Println(err)
+	}
+}
 func readFormats(dMap map[string]interface{}) []Format {
 	listOfFormats := dMap["formats"].([]interface{})
 	formats := make([]Format, 0, len(listOfFormats))
