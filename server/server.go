@@ -136,45 +136,30 @@ func downloadVideoLive(w http.ResponseWriter, vid *video) {
 	if strings.ToLower(os.Getenv("VIGOLER_SUPPORT_LIVE")) != "true" {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	} else {
-		async, err := videoUtils.Youtube.GetRealVideoUrl(vid.videoUrl, vigoler.GetBestFormat(vid.videoUrl.Formats, true, true))
+		fileName := vigoler.ValidateFileName(vid.Name + "." + vid.Ext)
+		err, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit := extractLiveParameter()
 		if err != nil {
 			fmt.Println(err)
 			w.WriteHeader(http.StatusInternalServerError)
 		} else {
-			res, err, warn := async.Get()
+			var fileDownloadedCallback vigoler.LiveVideoCallback
+			fileDownloadedCallback = func(data interface{}, fileName string, async *vigoler.Async) {
+				_, err, _ = async.Get()
+				if err == nil {
+					vid := data.(*video)
+					ext := path.Ext(fileName)[1:]
+					name := fileName[:len(fileName)-(len(ext)+1)]
+					id := createId()
+					vid.Ids = append(vid.Ids, id)
+					videosMap[id] = &video{Name: name, Ext: ext, IsLive: false, ID: id, updateTime: time.Now(), async: async, parentId: vid.ID}
+				}
+			}
+			vid.async, err = videoUtils.LiveDownload(vid.videoUrl, vigoler.GetBestFormat(vid.videoUrl.Formats, true, true), &fileName, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit, fileDownloadedCallback, vid)
 			if err != nil {
 				fmt.Println(err)
 				w.WriteHeader(http.StatusInternalServerError)
 			} else {
-				if len(warn) > 0 {
-					fmt.Println(warn)
-				}
-				fileName := vigoler.ValidateFileName(vid.Name + "." + vid.Ext)
-				err, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit := extractLiveParameter()
-				if err != nil {
-					fmt.Println(err)
-					w.WriteHeader(http.StatusInternalServerError)
-				} else {
-					var fileDownloadedCallback vigoler.LiveVideoCallback
-					fileDownloadedCallback = func(data interface{}, fileName string, async *vigoler.Async) {
-						_, err, _ = async.Get()
-						if err == nil {
-							vid := data.(*video)
-							ext := path.Ext(fileName)[1:]
-							name := fileName[:len(fileName)-(len(ext)+1)]
-							id := createId()
-							vid.Ids = append(vid.Ids, id)
-							videosMap[id] = &video{Name: name, Ext: ext, IsLive: false, ID: id, updateTime: time.Now(), async: async, parentId: vid.ID}
-						}
-					}
-					vid.async, err = videoUtils.LiveDownload(res.(*string), &fileName, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit, fileDownloadedCallback, vid)
-					if err != nil {
-						fmt.Println(err)
-						w.WriteHeader(http.StatusInternalServerError)
-					} else {
-						json.NewEncoder(w).Encode(vid)
-					}
-				}
+				json.NewEncoder(w).Encode(vid)
 			}
 		}
 	}

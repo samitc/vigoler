@@ -94,9 +94,11 @@ func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output s
 		if setting.TimeSplitThreshold <= 0 {
 			setting.TimeSplitThreshold = setting.MaxTimeInSec
 		}
+		isAlreadyCalled := false
 		statsCallback = func(sizeInKb, timeInSec int) {
-			if timeInSec > setting.TimeSplitThreshold || sizeInKb > setting.SizeSplitThreshold {
+			if !isAlreadyCalled && (timeInSec > setting.TimeSplitThreshold || sizeInKb > setting.SizeSplitThreshold) {
 				go setting.CallbackBeforeSplit(url, setting, output)
+				isAlreadyCalled = true
 			}
 		}
 	}

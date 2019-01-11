@@ -76,13 +76,17 @@ func addIndexToFileName(name string) string {
 	}
 	return name
 }
-func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb, sizeSplitThreshold, maxTimeInSec, timeSplitThreshold int, liveVideoCallback LiveVideoCallback, data interface{}) (*Async, error) {
+func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, outputFile *string, maxSizeInKb, sizeSplitThreshold, maxTimeInSec, timeSplitThreshold int, liveVideoCallback LiveVideoCallback, data interface{}) (*Async, error) {
 	var wg sync.WaitGroup
 	var wa multipleWaitAble
 	var lastResult interface{}
 	var lastErr error
 	lastWarn := ""
 	lData := data
+	realURLAsync, err := vu.Youtube.GetRealVideoUrl(url, format)
+	if err != nil {
+		return nil, err
+	}
 	lLiveVideoCallback := liveVideoCallback
 	waitForVideoToDownload := func(fAsync *Async, output string) {
 		defer wg.Done()
@@ -93,26 +97,40 @@ func (vu *VideoUtils) LiveDownload(url *string, outputFile *string, maxSizeInKb,
 		}
 		lastResult, lastErr, lastWarn = nil, err, warn
 	}
-	downloadVideo := func(url string, setting DownloadSettings, output string) {
-		fAsync, err := vu.Ffmpeg.Download(url, setting, output)
+	downloadVideo := func(setting DownloadSettings, output string) {
+		realURLAsync, err := vu.Youtube.GetRealVideoUrl(url, format)
 		if err != nil {
 			lastResult, lastErr, lastWarn = nil, err, ""
 		} else {
-			wg.Add(1)
-			wa.add(fAsync)
-			waitForVideoToDownload(fAsync, output)
+			realURL, err, warn := realURLAsync.Get()
+			if err != nil {
+				lastResult, lastErr, lastWarn = nil, err, warn
+			} else {
+				fAsync, err := vu.Ffmpeg.Download(*realURL.(*string), setting, output)
+				if err != nil {
+					lastResult, lastErr, lastWarn = nil, err, ""
+				} else {
+					wg.Add(1)
+					wa.add(fAsync)
+					waitForVideoToDownload(fAsync, output)
+				}
+			}
 		}
 	}
 	splitCallback := func(url string, setting DownloadSettings, output string) {
 		output = addIndexToFileName(output)
-		downloadVideo(url, setting, output)
+		downloadVideo(setting, output)
 	}
-	fAsync, err := vu.Ffmpeg.Download(*url, DownloadSettings{CallbackBeforeSplit: splitCallback, MaxSizeInKb: maxSizeInKb, MaxTimeInSec: maxTimeInSec, SizeSplitThreshold: sizeSplitThreshold, TimeSplitThreshold: timeSplitThreshold}, *outputFile)
-	var wga sync.WaitGroup
-	async := CreateAsyncWaitGroup(&wga, &wa)
+	realURL, err, _ := realURLAsync.Get()
 	if err != nil {
 		return nil, err
 	}
+	fAsync, err := vu.Ffmpeg.Download(*realURL.(*string), DownloadSettings{CallbackBeforeSplit: splitCallback, MaxSizeInKb: maxSizeInKb, MaxTimeInSec: maxTimeInSec, SizeSplitThreshold: sizeSplitThreshold, TimeSplitThreshold: timeSplitThreshold}, *outputFile)
+	if err != nil {
+		return nil, err
+	}
+	var wga sync.WaitGroup
+	async := CreateAsyncWaitGroup(&wga, &wa)
 	wg.Add(1)
 	wa.add(fAsync)
 	wga.Add(1)
