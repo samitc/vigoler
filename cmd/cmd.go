@@ -61,36 +61,27 @@ func downloadBestAndMerge(url VideoUrl, videoUtils *VideoUtils, outputFormat str
 }
 func liveDownload(videos <-chan outputVideo, videoUtils *VideoUtils, wg *sync.WaitGroup) {
 	defer wg.Done()
-	var pendingAsync []*Async
 	var filesName []string
-	for video := range videos {
-		async, err := videoUtils.Youtube.GetRealVideoUrl(video.video, GetBestFormat(video.video.Formats, true, true))
-		if err != nil {
-			fmt.Println(err)
-		} else {
-			pendingAsync = append(pendingAsync, async)
-			var format string
-			if video.format != "" {
-				format = video.format
-			} else {
-				format = video.video.Ext
-			}
-			filesName = append(filesName, video.directory+string(os.PathSeparator)+ValidateFileName(video.video.Name)+"."+format)
-		}
-	}
 	maxSizeInKb := 9.8 * 1024 * 1024
 	sizeSplitThreshold := 9.7 * 1024 * 1024
 	maxTimeInSec := 5.5 * 60 * 60
 	timeSplitThreshold := 5.4 * 60 * 60
 	var downloadAsync []*Async
-	for i, video := range pendingAsync {
-		videoUrl := getAsyncData(video, filesName[i]).(*string)
-		async, err := videoUtils.LiveDownload(videoUrl, &filesName[i], int(maxSizeInKb), int(sizeSplitThreshold), int(maxTimeInSec), int(timeSplitThreshold), nil, nil)
+	for video := range videos {
+		var format string
+		if video.format != "" {
+			format = video.format
+		} else {
+			format = video.video.Ext
+		}
+		fileName := video.directory + string(os.PathSeparator) + ValidateFileName(video.video.Name) + "." + format
+		async, err := videoUtils.LiveDownload(video.video, GetBestFormat(video.video.Formats, true, true), &fileName, int(maxSizeInKb), int(sizeSplitThreshold), int(maxTimeInSec), int(timeSplitThreshold), nil, nil)
 		if err != nil {
 			fmt.Println(err)
 		} else {
 			downloadAsync = append(downloadAsync, async)
 		}
+		filesName = append(filesName, video.directory+string(os.PathSeparator)+ValidateFileName(video.video.Name)+"."+format)
 	}
 	for i, s := range downloadAsync {
 		getAsyncData(s, filesName[i])
