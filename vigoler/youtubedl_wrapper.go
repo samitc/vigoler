@@ -15,7 +15,7 @@ type YoutubeDlWrapper struct {
 type Format struct {
 	url      string
 	formatID string
-	// size of the file in bytes or -1 if the data is not available.
+	// size of the file in KB or -1 if the data is not available.
 	fileSize float64
 	ext      string
 	hasVideo bool
@@ -59,7 +59,7 @@ func readFormats(dMap map[string]interface{}) []Format {
 		if formatMap["filesize"] == nil {
 			fileSize = -1
 		} else {
-			fileSize = formatMap["filesize"].(float64)
+			fileSize = formatMap["filesize"].(float64) / 1024
 		}
 		url := formatMap["url"].(string)
 		formatID, _ := formatMap["format_id"].(string)

@@ -24,9 +24,6 @@ type FFmpegState func(sizeInKb, timeInSeconds int)
 func CreateFfmpegWrapper() FFmpegWrapper {
 	return FFmpegWrapper{ffmpeg: externalApp{"ffmpeg"}, ffprobe: externalApp{"ffprobe"}}
 }
-func beforeStartWork(line string) bool {
-	return strings.HasPrefix(line, "Press [q] to stop, [?] for help")
-}
 func timeStringToInt(s string) int {
 	return int((s[0]-'0')*10 + s[1] - '0')
 }
@@ -117,7 +114,8 @@ func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output s
 
 // GetInputSize return the size of the input in KB.
 func (ff *FFmpegWrapper) GetInputSize(url string) (*Async, error) {
-	args := []string{"-v", "error", "-show_entries", "format=size", "-of", "default=noprint_wrappers=1:nokey=1", url}
+	urlWithoutNewLine:=url[:len(url)-1]
+	args := []string{"-v", "error", "-show_entries", "format=size", "-of", "default=noprint_wrappers=1:nokey=1", urlWithoutNewLine}
 	wa, _, oChan, err := ff.ffprobe.runCommand(context.Background(), true, true, true, args...)
 	if err != nil {
 		return nil, err
@@ -126,15 +124,15 @@ func (ff *FFmpegWrapper) GetInputSize(url string) (*Async, error) {
 	wg.Add(1)
 	async := CreateAsyncWaitGroup(&wg, wa)
 	go func() {
+		defer wg.Done()
 		var sizeInBytes int
-		bytes2KB := 1 / 1024
+		var err error
+		bytes2KB := 1.0 / 1024
+		newLineLength:=len("\r\n")
 		for s := range oChan {
-			sizeInBytes, err = strconv.Atoi(s)
-			if err != nil {
-				async.SetResult(nil, err, "")
-			}
+			sizeInBytes, err = strconv.Atoi(s[:len(s)-newLineLength])
 		}
-		async.SetResult((int)(sizeInBytes*bytes2KB), nil, "")
+		async.SetResult((int)((float64)(sizeInBytes)*bytes2KB), err, "")
 	}()
 	return &async, nil
 }

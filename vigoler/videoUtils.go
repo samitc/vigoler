@@ -1,6 +1,7 @@
 package vigoler
 
 import (
+	"fmt"
 	"math/rand"
 	"os"
 	"strconv"
@@ -23,8 +24,16 @@ type TypedError interface {
 	error
 	Type() string
 }
-type onDownloadEnd func(err error, warn string) (string, error, string)
+type FileTooBigError struct {
+	url VideoUrl
+}
 
+func (e *FileTooBigError) Error() string {
+	return fmt.Sprintf("File %s is too big to download", e.url.url)
+}
+func (e *FileTooBigError) Type() string {
+	return "File too big error"
+}
 func (mwa *multipleWaitAble) add(async *Async) {
 	mwa.waitAbles = append(mwa.waitAbles, async)
 }
@@ -156,6 +165,7 @@ func (vu *VideoUtils) downloadFormat(url VideoUrl, format Format, setting Downlo
 	async := CreateAsyncWaitGroup(&wg, &wa)
 	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		realURL, err, warn := urlAsync.Get()
 		if err != nil {
 			async.SetResult(nil, err, warn)
@@ -295,7 +305,7 @@ func (vu *VideoUtils) DownloadBest(url VideoUrl, output string) (*Async, error) 
 }
 func (vu *VideoUtils) DownloadBestMaxSize(url VideoUrl, output string, sizeInKBytes int) (*Async, error) {
 	formats := GetFormatsOrder(url.Formats, true, true)
-	var fIndex = 0
+	var fIndex = -1
 	var lastKnownIndex = -1
 	if sizeInKBytes != -1 {
 		for i, f := range formats {
@@ -309,6 +319,9 @@ func (vu *VideoUtils) DownloadBestMaxSize(url VideoUrl, output string, sizeInKBy
 				lastKnownIndex = -1
 			}
 		}
+	}
+	if fIndex == -1 {
+		return nil, &FileTooBigError{url: url}
 	}
 	if lastKnownIndex == -1 {
 		lastKnownIndex = fIndex
