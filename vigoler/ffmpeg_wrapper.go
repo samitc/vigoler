@@ -8,7 +8,8 @@ import (
 )
 
 type FFmpegWrapper struct {
-	app externalApp
+	ffmpeg  externalApp
+	ffprobe externalApp
 }
 type DownloadCallback func(url string, setting DownloadSettings, output string)
 type DownloadSettings struct {
@@ -21,7 +22,7 @@ type DownloadSettings struct {
 type FFmpegState func(sizeInKb, timeInSeconds int)
 
 func CreateFfmpegWrapper() FFmpegWrapper {
-	return FFmpegWrapper{app: externalApp{"ffmpeg"}}
+	return FFmpegWrapper{ffmpeg: externalApp{"ffmpeg"}, ffprobe: externalApp{"ffprobe"}}
 }
 func beforeStartWork(line string) bool {
 	return strings.HasPrefix(line, "Press [q] to stop, [?] for help")
@@ -29,14 +30,16 @@ func beforeStartWork(line string) bool {
 func timeStringToInt(s string) int {
 	return int((s[0]-'0')*10 + s[1] - '0')
 }
+func timeToSeconds(time string) int {
+	return timeStringToInt(time[6:8]) + 60*(timeStringToInt(time[3:5])+60*timeStringToInt(time[:2]))
+}
 func processData(line string) (time, size int) {
 	splits := strings.Split(line, "=")
 	sizeStr := splits[4]
 	numberEnd := strings.Index(sizeStr, "k")
 	numberStart := strings.LastIndex(sizeStr[:numberEnd], " ") + 1
 	size, _ = strconv.Atoi(sizeStr[numberStart:numberEnd])
-	timeStr := splits[5]
-	time = timeStringToInt(timeStr[6:8]) + 60*(timeStringToInt(timeStr[3:5])+60*timeStringToInt(timeStr[:2]))
+	time = timeToSeconds(splits[5])
 	return
 }
 func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (*Async, error) {
@@ -44,7 +47,7 @@ func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (*
 	finalArgs := make([]string, 0, 3+len(args))
 	finalArgs = append(finalArgs, "-v", "warning", "-stats")
 	finalArgs = append(finalArgs, args...)
-	wa, _, oChan, err := ff.app.runCommand(context.Background(), true, true, false, finalArgs...)
+	wa, _, oChan, err := ff.ffmpeg.runCommand(context.Background(), true, true, false, finalArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -110,4 +113,28 @@ func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output s
 	}
 	args = append(args, output)
 	return ff.runFFmpeg(statsCallback, args...)
+}
+
+// GetInputSize return the size of the input in KB.
+func (ff *FFmpegWrapper) GetInputSize(url string) (*Async, error) {
+	args := []string{"-v", "error", "-show_entries", "format=size", "-of", "default=noprint_wrappers=1:nokey=1", url}
+	wa, _, oChan, err := ff.ffprobe.runCommand(context.Background(), true, true, true, args...)
+	if err != nil {
+		return nil, err
+	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	async := CreateAsyncWaitGroup(&wg, wa)
+	go func() {
+		var sizeInBytes int
+		bytes2KB := 1 / 1024
+		for s := range oChan {
+			sizeInBytes, err = strconv.Atoi(s)
+			if err != nil {
+				async.SetResult(nil, err, "")
+			}
+		}
+		async.SetResult((int)(sizeInBytes*bytes2KB), nil, "")
+	}()
+	return &async, nil
 }

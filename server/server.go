@@ -185,7 +185,7 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 					if sizeInKb == -1 {
 						vid.async, err = videoUtils.DownloadBest(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext))
 					} else {
-						vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext), sizeInKb*1024)
+						vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoUrl, vigoler.ValidateFileName(vid.Name+"."+vid.Ext), sizeInKb)
 					}
 					if err != nil {
 						fmt.Println(err)
