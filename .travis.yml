@@ -9,3 +9,7 @@ go:
   - "1.11.x"
   - "1.x"
   - master
+matrix:
+  allow_failures:
+    - os: windows
+      go: master
