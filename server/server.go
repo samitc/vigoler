@@ -189,9 +189,10 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 					}
 					if err != nil {
 						fmt.Println(err)
-						w.WriteHeader(http.StatusInternalServerError)
+						writeErrorToClient(w, err)
+					} else {
+						json.NewEncoder(w).Encode(vid)
 					}
-					json.NewEncoder(w).Encode(vid)
 				}
 			}
 		}

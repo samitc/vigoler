@@ -197,8 +197,8 @@ func (vu *VideoUtils) DownloadBestAndMerge(url VideoUrl, output string) (*Async,
 	if vu.random == nil {
 		vu.random = rand.New(rand.NewSource(time.Now().UnixNano()))
 	}
-	videoPath := strconv.Itoa(vu.random.Int())
-	audioPath := strconv.Itoa(vu.random.Int())
+	videoPath := strconv.Itoa(vu.random.Int()) + "." + bestVideoFormats[0].ext
+	audioPath := strconv.Itoa(vu.random.Int()) + "." + bestAudioFormats[0].ext
 	video, vErr := vu.downloadFormat(url, bestVideoFormats[0], DownloadSettings{}, videoPath)
 	audio, aErr := vu.downloadFormat(url, bestAudioFormats[0], DownloadSettings{}, audioPath)
 	if vErr != nil || aErr != nil {
@@ -321,7 +321,11 @@ func (vu *VideoUtils) DownloadBestMaxSize(url VideoUrl, output string, sizeInKBy
 		}
 	}
 	if fIndex == -1 {
-		return nil, &FileTooBigError{url: url}
+		if lastKnownIndex == -1 {
+			return nil, &FileTooBigError{url: url}
+		}
+		lastKnownIndex = 0
+		fIndex = len(formats) - 1
 	}
 	if lastKnownIndex == -1 {
 		lastKnownIndex = fIndex
