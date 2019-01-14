@@ -2,6 +2,7 @@ package vigoler
 
 import (
 	"context"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -82,9 +83,12 @@ func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 	return ff.runFFmpeg(nil, finalArgs...)
 }
 func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output string) (*Async, error) {
-	const kbToByte = 1024
+	if len(url) < 1 || url[len(url)-1] != '\n' {
+		return nil, &ArgumentError{stackTrack: debug.Stack(), argName: "url", argValue: url}
+	}
 	// Remove suffix new line
 	url = url[:len(url)-1]
+	const kbToByte = 1024
 	var statsCallback FFmpegState
 	args := []string{"-i", url, "-c", "copy"}
 	if setting.CallbackBeforeSplit != nil && (setting.SizeSplitThreshold > 0 || setting.TimeSplitThreshold > 0) {
@@ -114,7 +118,7 @@ func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output s
 
 // GetInputSize return the size of the input in KB.
 func (ff *FFmpegWrapper) GetInputSize(url string) (*Async, error) {
-	urlWithoutNewLine:=url[:len(url)-1]
+	urlWithoutNewLine := url[:len(url)-1]
 	args := []string{"-v", "error", "-show_entries", "format=size", "-of", "default=noprint_wrappers=1:nokey=1", urlWithoutNewLine}
 	wa, _, oChan, err := ff.ffprobe.runCommand(context.Background(), true, true, true, args...)
 	if err != nil {
@@ -128,7 +132,7 @@ func (ff *FFmpegWrapper) GetInputSize(url string) (*Async, error) {
 		var sizeInBytes int
 		var err error
 		bytes2KB := 1.0 / 1024
-		newLineLength:=len("\r\n")
+		newLineLength := len("\r\n")
 		for s := range oChan {
 			sizeInBytes, err = strconv.Atoi(s[:len(s)-newLineLength])
 		}
