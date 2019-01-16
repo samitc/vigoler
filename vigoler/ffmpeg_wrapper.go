@@ -2,6 +2,7 @@ package vigoler
 
 import (
 	"context"
+	"errors"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -56,10 +57,12 @@ func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (*
 		defer wg.Done()
 		warn := ""
 		fullS := ""
+		downloadStarted := false
 		for s := range oChan {
 			fullS, s = extractLineFromString(fullS + s)
 			if s != "" {
 				if strings.HasPrefix(s, "frame=") {
+					downloadStarted = true
 					if statsCallback != nil {
 						timeInSec, sizeInKb := processData(s)
 						statsCallback(sizeInKb, timeInSec)
@@ -69,7 +72,11 @@ func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (*
 				}
 			}
 		}
-		async.SetResult(nil, nil, warn)
+		var err error
+		if !downloadStarted {
+			err = errors.New("Unknown error in ffmpeg")
+		}
+		async.SetResult(nil, err, warn)
 	}()
 	return &async, nil
 }
