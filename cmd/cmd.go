@@ -44,10 +44,13 @@ func getAsyncData(async *Async, warnPrefix string) interface{} {
 	}
 	return i
 }
+func getDefaultExtention(url VideoUrl) string {
+	return GetBestFormat(url.Formats, true, true).Ext
+}
 func downloadBestAndMerge(url VideoUrl, videoUtils *VideoUtils, outputFormat string, directory string, wg *sync.WaitGroup, sem *semaphore) (*Async, string) {
 	var format string
 	if outputFormat == "" {
-		format = url.Ext
+		format = getDefaultExtention(url)
 	} else {
 		format = outputFormat
 	}
@@ -72,7 +75,7 @@ func liveDownload(videos <-chan outputVideo, videoUtils *VideoUtils, wg *sync.Wa
 		if video.format != "" {
 			format = video.format
 		} else {
-			format = video.video.Ext
+			format = getDefaultExtention(video.video)
 		}
 		fileName := video.directory + string(os.PathSeparator) + ValidateFileName(video.video.Name) + "." + format
 		async, err := videoUtils.LiveDownload(video.video, GetBestFormat(video.video.Formats, true, true), &fileName, int(maxSizeInKb), int(sizeSplitThreshold), int(maxTimeInSec), int(timeSplitThreshold), nil, nil)

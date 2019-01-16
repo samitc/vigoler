@@ -17,14 +17,13 @@ type Format struct {
 	formatID string
 	// size of the file in KB or -1 if the data is not available.
 	fileSize float64
-	ext      string
+	Ext      string
 	hasVideo bool
 	hasAudio bool
 }
 type VideoUrl struct {
 	Name    string
 	IsLive  bool
-	Ext     string
 	Formats []Format
 	url     string
 }
@@ -66,7 +65,7 @@ func readFormats(dMap map[string]interface{}) []Format {
 		ext := formatMap["ext"].(string)
 		hasVideo := formatMap["vcodec"] != "none"
 		hasAudio := formatMap["acodec"] != "none"
-		formats = append(formats, Format{fileSize: fileSize, url: url, formatID: formatID, ext: ext, hasVideo: hasVideo, hasAudio: hasAudio})
+		formats = append(formats, Format{fileSize: fileSize, url: url, formatID: formatID, Ext: ext, hasVideo: hasVideo, hasAudio: hasAudio})
 	}
 	return formats
 }
@@ -110,7 +109,7 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 					} else {
 						isAlive = dMap[ALIVE_NAME].(bool)
 					}
-					videos = append(videos, VideoUrl{Ext: dMap[EXT_NAME].(string), url: dMap[URL_NAME].(string), Name: dMap[TITLE_NAME].(string), IsLive: isAlive, Formats: readFormats(dMap)})
+					videos = append(videos, VideoUrl{url: dMap[URL_NAME].(string), Name: dMap[TITLE_NAME].(string), IsLive: isAlive, Formats: readFormats(dMap)})
 				}
 			}
 			if hasWarn {
