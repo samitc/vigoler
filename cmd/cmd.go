@@ -78,7 +78,7 @@ func liveDownload(videos <-chan outputVideo, videoUtils *VideoUtils, wg *sync.Wa
 			format = getDefaultExtention(video.video)
 		}
 		fileName := video.directory + string(os.PathSeparator) + ValidateFileName(video.video.Name) + "." + format
-		async, err := videoUtils.LiveDownload(video.video, GetBestFormat(video.video.Formats, true, true), &fileName, int(maxSizeInKb), int(sizeSplitThreshold), int(maxTimeInSec), int(timeSplitThreshold), nil, nil)
+		async, err := videoUtils.LiveDownload(video.video, GetBestFormat(video.video.Formats, true, true), fileName, int(maxSizeInKb), int(sizeSplitThreshold), int(maxTimeInSec), int(timeSplitThreshold), nil, nil)
 		if err != nil {
 			fmt.Println(err)
 		} else {

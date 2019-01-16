@@ -161,7 +161,6 @@ func (vu *VideoUtils) downloadFormat(url VideoUrl, format Format, setting Downlo
 	if err != nil {
 		return nil, err
 	}
-	output += "." + format.Ext
 	var wa multipleWaitAble
 	wa.add(urlAsync)
 	async := CreateAsyncWaitGroup(&wg, &wa)
@@ -298,7 +297,7 @@ func (vu *VideoUtils) downloadBestFormats(url VideoUrl, output string, formats [
 	var async *Async
 	var err error
 	if len(formats) == 1 {
-		async, err = vu.downloadFormat(url, formats[0], DownloadSettings{}, output)
+		async, err = vu.downloadFormat(url, formats[0], DownloadSettings{}, output+"."+formats[0].Ext)
 	} else {
 		async, err = vu.findBestFormat(url, sizeInKBytes, formats, output)
 	}
