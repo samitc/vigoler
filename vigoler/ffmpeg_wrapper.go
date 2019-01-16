@@ -32,13 +32,13 @@ func timeStringToInt(s string) int {
 func timeToSeconds(time string) int {
 	return timeStringToInt(time[6:8]) + 60*(timeStringToInt(time[3:5])+60*timeStringToInt(time[:2]))
 }
-func processData(line string) (time, size int) {
+func processData(line string, sizeIndex int) (time, size int) {
 	splits := strings.Split(line, "=")
-	sizeStr := splits[4]
+	sizeStr := splits[sizeIndex]
 	numberEnd := strings.Index(sizeStr, "k")
 	numberStart := strings.LastIndex(sizeStr[:numberEnd], " ") + 1
 	size, _ = strconv.Atoi(sizeStr[numberStart:numberEnd])
-	time = timeToSeconds(splits[5])
+	time = timeToSeconds(splits[sizeIndex+1])
 	return
 }
 func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (*Async, error) {
@@ -61,10 +61,19 @@ func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (*
 		for s := range oChan {
 			fullS, s = extractLineFromString(fullS + s)
 			if s != "" {
-				if strings.HasPrefix(s, "frame=") {
+				// Two different message can be here (one for video and one for audio)
+				// video - frame= 2039 fps=161 q=-1.0 Lsize=   10808kB time=00:01:07.96 bitrate=1302.7kbits/s speed=5.36x
+				// audio - size=    8553kB time=00:09:11.75 bitrate= 127.0kbits/s speed=3.37e+03x
+				isVideo := strings.HasPrefix(s, "frame=")
+				isAudio := strings.HasPrefix(s, "size=")
+				if isVideo || isAudio {
 					downloadStarted = true
 					if statsCallback != nil {
-						timeInSec, sizeInKb := processData(s)
+						startIndex := 0
+						if isVideo {
+							startIndex = 4
+						}
+						timeInSec, sizeInKb := processData(s, startIndex)
 						statsCallback(sizeInKb, timeInSec)
 					}
 				} else {
