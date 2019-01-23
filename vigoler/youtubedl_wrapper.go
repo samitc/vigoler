@@ -33,6 +33,9 @@ type HttpError struct {
 }
 type DownloadStatus func(url VideoUrl, percent, size float32)
 
+func (format Format) String() string {
+	return fmt.Sprintf("id=%s, size=%v, ext=%s", format.formatID, format.fileSize, format.Ext)
+}
 func (e *HttpError) Error() string {
 	return fmt.Sprintf("Http error while requested %s. error message is: %s", e.Video, e.ErrorMessage)
 }
