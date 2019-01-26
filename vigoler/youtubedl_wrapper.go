@@ -52,8 +52,18 @@ func (you *YoutubeDlWrapper) UpdateYoutubeDl() {
 		fmt.Println(err)
 	}
 }
+func createSingleFormat(dMap map[string]interface{}) []Format {
+	url := dMap["url"].(string)
+	formatID, _ := dMap["format_id"].(string)
+	ext := dMap["ext"].(string)
+	return []Format{Format{fileSize: -1, url: url, formatID: formatID, Ext: ext, hasVideo: true, hasAudio: true}}
+}
 func readFormats(dMap map[string]interface{}) []Format {
-	listOfFormats := dMap["formats"].([]interface{})
+	mapOfFormats := dMap["formats"]
+	if mapOfFormats == nil {
+		return createSingleFormat(dMap)
+	}
+	listOfFormats := mapOfFormats.([]interface{})
 	formats := make([]Format, 0, len(listOfFormats))
 	for _, format := range listOfFormats {
 		formatMap := format.(map[string]interface{})
