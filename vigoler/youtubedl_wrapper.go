@@ -52,8 +52,18 @@ func (you *YoutubeDlWrapper) UpdateYoutubeDl() {
 		fmt.Println(err)
 	}
 }
+func createSingleFormat(dMap map[string]interface{}) []Format {
+	url := dMap["url"].(string)
+	formatID, _ := dMap["format_id"].(string)
+	ext := dMap["ext"].(string)
+	return []Format{Format{fileSize: -1, url: url, formatID: formatID, Ext: ext, hasVideo: true, hasAudio: true}}
+}
 func readFormats(dMap map[string]interface{}) []Format {
-	listOfFormats := dMap["formats"].([]interface{})
+	mapOfFormats := dMap["formats"]
+	if mapOfFormats == nil {
+		return createSingleFormat(dMap)
+	}
+	listOfFormats := mapOfFormats.([]interface{})
 	formats := make([]Format, 0, len(listOfFormats))
 	for _, format := range listOfFormats {
 		formatMap := format.(map[string]interface{})
@@ -72,6 +82,56 @@ func readFormats(dMap map[string]interface{}) []Format {
 	}
 	return formats
 }
+func getUrls(output *<-chan string, url string) ([]VideoUrl, error, string) {
+	const URL_NAME = "webpage_url"
+	const ALIVE_NAME = "is_live"
+	const TITLE_NAME = "title"
+	const EXT_NAME = "ext"
+	var videos []VideoUrl
+	var err error
+	warnOutput := ""
+	videoIndex := 0
+	preWarnIndex := -1
+	for s := range *output {
+		hasWarn := false
+		errorIndex := str.Index(s, "ERROR")
+		warnIndex := str.Index(s, "WARNING")
+		if errorIndex != -1 || warnIndex != -1 {
+			hasWarn = true
+		} else {
+			j := []byte(s)
+			var data interface{}
+			json.Unmarshal(j, &data)
+			if data == nil {
+				hasWarn = true
+			} else {
+				dMap := data.(map[string]interface{})
+				var isAlive bool
+				if dMap[ALIVE_NAME] == nil {
+					isAlive = false
+				} else {
+					isAlive = dMap[ALIVE_NAME].(bool)
+				}
+				videos = append(videos, VideoUrl{url: dMap[URL_NAME].(string), Name: dMap[TITLE_NAME].(string), IsLive: isAlive, Formats: readFormats(dMap)})
+			}
+		}
+		if hasWarn {
+			warnVideoIndex := videoIndex
+			if preWarnIndex != -1 {
+				warnVideoIndex--
+			}
+			warnOutput += "WARN IN VIDEO NUMBER: " + strconv.Itoa(warnVideoIndex) + ". " + s
+			if str.Index(s, "Unable to download webpage: HTTP Error 503") != -1 {
+				err = &HttpError{Video: url}
+			}
+		}
+		if !hasWarn || preWarnIndex == -1 {
+			videoIndex++
+		}
+		preWarnIndex = warnIndex
+	}
+	return videos, err, warnOutput
+}
 func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 	ctx := context.Background()
 	wa, output, err := youdown.app.runCommandChan(ctx, "-i", "-j", url)
@@ -83,54 +143,7 @@ func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
 	async := CreateAsyncWaitGroup(&wg, wa)
 	go func(async *Async, output *<-chan string, url string) {
 		defer async.wg.Done()
-		const URL_NAME = "webpage_url"
-		const ALIVE_NAME = "is_live"
-		const TITLE_NAME = "title"
-		const EXT_NAME = "ext"
-		var videos []VideoUrl
-		var err error
-		warnOutput := ""
-		videoIndex := 0
-		preWarnIndex := -1
-		for s := range *output {
-			hasWarn := false
-			errorIndex := str.Index(s, "ERROR")
-			warnIndex := str.Index(s, "WARNING")
-			if errorIndex != -1 || warnIndex != -1 {
-				hasWarn = true
-			} else {
-				j := []byte(s)
-				var data interface{}
-				json.Unmarshal(j, &data)
-				if data == nil {
-					hasWarn = true
-				} else {
-					dMap := data.(map[string]interface{})
-					var isAlive bool
-					if dMap[ALIVE_NAME] == nil {
-						isAlive = false
-					} else {
-						isAlive = dMap[ALIVE_NAME].(bool)
-					}
-					videos = append(videos, VideoUrl{url: dMap[URL_NAME].(string), Name: dMap[TITLE_NAME].(string), IsLive: isAlive, Formats: readFormats(dMap)})
-				}
-			}
-			if hasWarn {
-				warnVideoIndex := videoIndex
-				if preWarnIndex != -1 {
-					warnVideoIndex--
-				}
-				warnOutput += "WARN IN VIDEO NUMBER: " + strconv.Itoa(warnVideoIndex) + ". " + s
-				if str.Index(s, "Unable to download webpage: HTTP Error 503") != -1 {
-					err = &HttpError{Video: url}
-				}
-			}
-			if !hasWarn || preWarnIndex == -1 {
-				videoIndex++
-			}
-			preWarnIndex = warnIndex
-		}
-		async.SetResult(&videos, err, warnOutput)
+		async.SetResult(getUrls(output, url))
 	}(&async, &output, url)
 	return &async, nil
 }
