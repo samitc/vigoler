@@ -1,6 +1,7 @@
 package vigoler
 
 import (
+	"io/ioutil"
 	"reflect"
 	"testing"
 )
@@ -61,4 +62,60 @@ func TestFormats(t *testing.T) {
 			})
 		}
 	})
+}
+func assertString(t *testing.T, desc string, got, expected string) {
+	if got != expected {
+		t.Errorf("%s = %v, wanted = %v", desc, got, expected)
+	}
+}
+func assertBool(t *testing.T, desc string, got, expected bool) {
+	if got != expected {
+		t.Errorf("%s = %v, wanted = %v", desc, got, expected)
+	}
+}
+func assert(t *testing.T, desc string, got, expected interface{}) {
+	if !reflect.DeepEqual(got, expected) {
+		t.Errorf("%s = %v, wanted %v", desc, got, expected)
+	}
+}
+func Test_getUrls(t *testing.T) {
+	sChan := make(chan string)
+	url := "https://openload.co/embed/video_id"
+	vidName := "movie.2018.720p.mp4"
+	vidURL := url
+	vidFormatURL := "https://openload.co/stream/video_id~1548610975~192.168.0.0~u-x4488e?mime=true"
+	vidIsLive := false
+	vidFormat := Format{url: vidFormatURL, formatID: "0", fileSize: -1, Ext: "mp4", hasVideo: true, hasAudio: true}
+	dat, err := ioutil.ReadFile("test_files/no_formats.json")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	go func() {
+		sChan <- string(dat)
+		close(sChan)
+	}()
+	pChan := (<-chan string)(sChan)
+	vidUrls, err, warn := getUrls(&(pChan), url)
+	if err != nil {
+		t.Errorf("getUrls error = %v", err)
+		return
+	}
+	if warn != "" {
+		t.Errorf("getUrls warning = %s", warn)
+	}
+	if len(vidUrls) != 1 {
+		t.Errorf("getUrls number of videos = %v", len(vidUrls))
+	}
+	for _, vid := range vidUrls {
+		assertString(t, "getUrls return video name", vid.Name, vidName)
+		assertString(t, "getUrls return video url", vid.url, vidURL)
+		assertBool(t, "getUrls return isLive", vid.IsLive, vidIsLive)
+		if len(vid.Formats) != 1 {
+			t.Errorf("getUrls number of formats = %v", len(vidUrls))
+		}
+		if len(vid.Formats) > 0 {
+			assert(t, "getUrls return format", vid.Formats[0], vidFormat)
+		}
+	}
 }
