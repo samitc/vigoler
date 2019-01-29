@@ -52,8 +52,18 @@ func (you *YoutubeDlWrapper) UpdateYoutubeDl() {
 		fmt.Println(err)
 	}
 }
+func createURL(url string) string {
+	urlLen := len(url)
+	if urlLen > 1 && url[urlLen-1] == '\n' {
+		urlLen--
+	}
+	if urlLen > 1 && url[urlLen-1] == '\r' {
+		urlLen--
+	}
+	return url[:urlLen]
+}
 func createSingleFormat(dMap map[string]interface{}) []Format {
-	url := dMap["url"].(string)
+	url := createURL(dMap["url"].(string))
 	formatID, _ := dMap["format_id"].(string)
 	ext := dMap["ext"].(string)
 	return []Format{Format{fileSize: -1, url: url, formatID: formatID, Ext: ext, hasVideo: true, hasAudio: true}}
@@ -73,7 +83,7 @@ func readFormats(dMap map[string]interface{}) []Format {
 		} else {
 			fileSize = formatMap["filesize"].(float64) / 1024
 		}
-		url := formatMap["url"].(string)
+		url := createURL(formatMap["url"].(string))
 		formatID, _ := formatMap["format_id"].(string)
 		ext := formatMap["ext"].(string)
 		hasVideo := formatMap["vcodec"] != "none"
@@ -158,14 +168,15 @@ func (youdown *YoutubeDlWrapper) GetRealUrl(url VideoUrl, format Format) (*Async
 	async := CreateAsyncWaitGroup(&wg, wa)
 	go func(async *Async, output *<-chan string) {
 		defer async.wg.Done()
-		realVideoUrl := ""
+		realVideoURL := ""
 		for s := range *output {
-			if realVideoUrl != "" {
+			if realVideoURL != "" {
 				fmt.Println(s) //TODO: return error - should not happen
 			}
-			realVideoUrl = s
+			realVideoURL = s
 		}
-		async.SetResult(&realVideoUrl, nil, "")
+		realVideoURL = createURL(realVideoURL)
+		async.SetResult(&realVideoURL, nil, "")
 	}(&async, &output)
 	return &async, nil
 }

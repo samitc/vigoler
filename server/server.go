@@ -108,7 +108,7 @@ func createVideos(url string) ([]video, error) {
 		return nil, err
 	}
 	videos := make([]video, 0)
-	for _, url := range *urls.(*[]vigoler.VideoUrl) {
+	for _, url := range urls.([]vigoler.VideoUrl) {
 		videos = append(videos, video{videoURL: url, ID: createID(), Name: url.Name, IsLive: url.IsLive, isLogged: false})
 	}
 	return videos, nil
@@ -304,7 +304,8 @@ func waitAndExecute(timeEnv string, exec func()) {
 func main() {
 	you := vigoler.CreateYoutubeDlWrapper()
 	ff := vigoler.CreateFfmpegWrapper()
-	videoUtils = vigoler.VideoUtils{Youtube: &you, Ffmpeg: &ff}
+	curl := vigoler.CreateCurlWrapper()
+	videoUtils = vigoler.VideoUtils{Youtube: &you, Ffmpeg: &ff, Curl: &curl}
 	videosMap = make(map[string]*video)
 	router := mux.NewRouter()
 	router.HandleFunc("/videos", process).Methods("POST")

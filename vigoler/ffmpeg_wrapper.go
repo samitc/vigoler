@@ -99,11 +99,9 @@ func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 	return ff.runFFmpeg(nil, finalArgs...)
 }
 func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output string) (*Async, error) {
-	if len(url) < 1 || url[len(url)-1] != '\n' {
+	if len(url) == 0 {
 		return nil, &ArgumentError{stackTrack: debug.Stack(), argName: "url", argValue: url}
 	}
-	// Remove suffix new line
-	url = url[:len(url)-1]
 	const kbToByte = 1024
 	var statsCallback FFmpegState
 	args := []string{"-i", url, "-c", "copy"}

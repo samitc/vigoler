@@ -100,7 +100,8 @@ func main() {
 	flag.Parse()
 	youtube := CreateYoutubeDlWrapper()
 	ffmpeg := CreateFfmpegWrapper()
-	videoUtils := VideoUtils{Youtube: &youtube, Ffmpeg: &ffmpeg}
+	curl := CreateCurlWrapper()
+	videoUtils := VideoUtils{Youtube: &youtube, Ffmpeg: &ffmpeg, Curl: &curl}
 	numberOfCores := runtime.NumCPU()
 	sem := make(semaphore, numberOfCores)
 	var pendingUrlAsync []*Async
@@ -119,8 +120,8 @@ func main() {
 	var pendingDownloadNames []string
 	go liveDownload(liveDownChan, &videoUtils, &wg)
 	for i, a := range pendingUrlAsync {
-		urls := getAsyncData(a, downloads[i]).(*[]VideoUrl)
-		for _, url := range *urls {
+		urls := getAsyncData(a, downloads[i]).([]VideoUrl)
+		for _, url := range urls {
 			if url.IsLive {
 				liveDownChan <- outputVideo{video: url, directory: directories[i], format: outputFormat[i]}
 			} else {
