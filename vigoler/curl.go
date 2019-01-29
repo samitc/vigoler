@@ -2,6 +2,8 @@ package vigoler
 
 import (
 	"context"
+	"io"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -57,12 +59,37 @@ func (curl *CurlWrapper) Download(url string, output string) (*Async, error) {
 	sizeOfPart := (int)(videoSizeInBytes / numOfParts)
 	var wa multipleWaitAble
 	var wg sync.WaitGroup
+	wg.Add(1)
 	async := CreateAsyncWaitGroup(&wg, &wa)
-	for i := 0; i < numOfParts-1; i++ {
-		wa.add(curl.runCurl(url, output+strconv.Itoa(i), i*sizeOfPart, (i+1)*sizeOfPart))
-	}
-	wa.add(curl.runCurl(url, output+strconv.Itoa(numOfParts-1), (numOfParts-1)*sizeOfPart, -1))
-	err = wa.Wait()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < numOfParts-1; i++ {
+			wa.add(curl.runCurl(url, output+strconv.Itoa(i), i*sizeOfPart, (i+1)*sizeOfPart-1))
+		}
+		wa.add(curl.runCurl(url, output+strconv.Itoa(numOfParts-1), (numOfParts-1)*sizeOfPart, -1))
+		err := wa.Wait()
+		if err == nil {
+			os.Rename(output+"0", output)
+			if numOfParts > 1 {
+				baseFile, err := os.OpenFile(output, os.O_APPEND|os.O_WRONLY, 0644)
+				if err == nil {
+					for i := 1; i < numOfParts; i++ {
+						tempFileName := output + strconv.Itoa(i)
+						var tempFile *os.File
+						tempFile, err = os.Open(tempFileName)
+						if err != nil {
+							break
+						}
+						_, err = io.Copy(baseFile, tempFile)
+						tempFile.Close()
+						os.Remove(tempFileName)
+					}
+				}
+				baseFile.Close()
+			}
+		}
+		async.SetResult(nil, err, "")
+	}()
 	return &async, nil
 }
 func (curl *CurlWrapper) GetVideoSize(url string) (*Async, error) {
