@@ -53,6 +53,13 @@ func addIndexToFileName(name string) string {
 	}
 	return name
 }
+func (vu *VideoUtils) chooseDownload(url, output, protocol string) (*Async, error) {
+	if protocol == "https" {
+		return vu.Curl.Download(url, output)
+	} else {
+		return vu.Ffmpeg.Download(url, DownloadSettings{}, output)
+	}
+}
 func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, outputFile string, maxSizeInKb, sizeSplitThreshold, maxTimeInSec, timeSplitThreshold int, liveVideoCallback LiveVideoCallback, data interface{}) (*Async, error) {
 	var wg sync.WaitGroup
 	var wa multipleWaitAble
@@ -138,7 +145,7 @@ func (vu *VideoUtils) downloadFormat(url VideoUrl, format Format, output string)
 			return
 		}
 		wa.remove(urlAsync)
-		downloadAsync, err := vu.Curl.Download(*realURL.(*string), output)
+		downloadAsync, err := vu.chooseDownload(*realURL.(*string), output, format.protocol)
 		if err != nil {
 			async.SetResult(nil, err, warn)
 			return
@@ -233,7 +240,7 @@ func (vu *VideoUtils) findBestFormat(url VideoUrl, sizeInKBytes int, formats []F
 					async.SetResult(nil, err, warn)
 					break
 				}
-				as, err = vu.Curl.GetVideoSize(*url.(*string))
+				as, err = vu.Ffmpeg.GetInputSize(*url.(*string))
 				if err != nil {
 					async.SetResult(nil, err, "")
 					break
@@ -245,7 +252,7 @@ func (vu *VideoUtils) findBestFormat(url VideoUrl, sizeInKBytes int, formats []F
 				}
 				if size.(int) < sizeInKBytes {
 					output += "." + format.Ext
-					as, err := vu.Curl.Download(*url.(*string), output)
+					as, err := vu.chooseDownload(*url.(*string), output, format.protocol)
 					if err != nil {
 						async.SetResult(nil, err, "")
 					} else {

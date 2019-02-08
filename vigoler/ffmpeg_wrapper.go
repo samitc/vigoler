@@ -132,8 +132,7 @@ func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output s
 
 // GetInputSize return the size of the input in KB.
 func (ff *FFmpegWrapper) GetInputSize(url string) (*Async, error) {
-	urlWithoutNewLine := url[:len(url)-1]
-	args := []string{"-v", "error", "-show_entries", "format=size", "-of", "default=noprint_wrappers=1:nokey=1", urlWithoutNewLine}
+	args := []string{"-v", "error", "-show_entries", "format=size", "-of", "default=noprint_wrappers=1:nokey=1", url}
 	wa, _, oChan, err := ff.ffprobe.runCommand(context.Background(), true, true, true, args...)
 	if err != nil {
 		return nil, err

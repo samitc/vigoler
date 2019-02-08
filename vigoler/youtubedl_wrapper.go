@@ -20,6 +20,7 @@ type Format struct {
 	Ext      string
 	hasVideo bool
 	hasAudio bool
+	protocol string
 }
 type VideoUrl struct {
 	Name    string
@@ -34,7 +35,7 @@ type HttpError struct {
 type DownloadStatus func(url VideoUrl, percent, size float32)
 
 func (format Format) String() string {
-	return fmt.Sprintf("id=%s, size=%v, ext=%s", format.formatID, format.fileSize, format.Ext)
+	return fmt.Sprintf("id=%s, size=%v, ext=%s, protocol=%s", format.formatID, format.fileSize, format.Ext, format.protocol)
 }
 func (e *HttpError) Error() string {
 	return fmt.Sprintf("Http error while requested %s. error message is: %s", e.Video, e.ErrorMessage)
@@ -66,7 +67,8 @@ func createSingleFormat(dMap map[string]interface{}) []Format {
 	url := createURL(dMap["url"].(string))
 	formatID, _ := dMap["format_id"].(string)
 	ext := dMap["ext"].(string)
-	return []Format{Format{fileSize: -1, url: url, formatID: formatID, Ext: ext, hasVideo: true, hasAudio: true}}
+	protocol := dMap["protocol"].(string)
+	return []Format{Format{fileSize: -1, url: url, formatID: formatID, Ext: ext, protocol: protocol, hasVideo: true, hasAudio: true}}
 }
 func readFormats(dMap map[string]interface{}) []Format {
 	mapOfFormats := dMap["formats"]
@@ -88,7 +90,8 @@ func readFormats(dMap map[string]interface{}) []Format {
 		ext := formatMap["ext"].(string)
 		hasVideo := formatMap["vcodec"] != "none"
 		hasAudio := formatMap["acodec"] != "none"
-		formats = append(formats, Format{fileSize: fileSize, url: url, formatID: formatID, Ext: ext, hasVideo: hasVideo, hasAudio: hasAudio})
+		protocol := formatMap["protocol"].(string)
+		formats = append(formats, Format{fileSize: fileSize, url: url, formatID: formatID, Ext: ext, protocol: protocol, hasVideo: hasVideo, hasAudio: hasAudio})
 	}
 	return formats
 }
