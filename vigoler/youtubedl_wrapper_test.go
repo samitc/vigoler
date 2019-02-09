@@ -85,7 +85,7 @@ func Test_getUrls(t *testing.T) {
 	vidURL := url
 	vidFormatURL := "https://openload.co/stream/video_id~1548610975~192.168.0.0~u-x4488e?mime=true"
 	vidIsLive := false
-	vidFormat := Format{url: vidFormatURL, formatID: "0", fileSize: -1, Ext: "mp4", hasVideo: true, hasAudio: true}
+	vidFormat := Format{url: vidFormatURL, formatID: "0", fileSize: -1, Ext: "mp4", protocol: "https", hasVideo: true, hasAudio: true}
 	dat, err := ioutil.ReadFile("test_files/no_formats.json")
 	if err != nil {
 		t.Error(err)

@@ -19,6 +19,44 @@ type WaitAble interface {
 	Wait() error
 	Stop() error
 }
+type multipleWaitAble struct {
+	waitAbles []*Async
+	isStopped bool
+}
+
+func (mwa *multipleWaitAble) add(async *Async) {
+	mwa.waitAbles = append(mwa.waitAbles, async)
+}
+func (mwa *multipleWaitAble) remove(async *Async) {
+	waitAbleLen := len(mwa.waitAbles) - 1
+	for i, v := range mwa.waitAbles {
+		if v == async {
+			mwa.waitAbles[i] = mwa.waitAbles[waitAbleLen]
+			break
+		}
+	}
+	mwa.waitAbles = mwa.waitAbles[:waitAbleLen]
+}
+func (mwa *multipleWaitAble) Wait() error {
+	for _, wa := range mwa.waitAbles {
+		_, err, _ := wa.Get()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (mwa *multipleWaitAble) Stop() error {
+	for _, wa := range mwa.waitAbles {
+		err := wa.Stop()
+		if err != nil {
+			return err
+		}
+	}
+	mwa.isStopped = true
+	return nil
+}
+
 type CancelError struct {
 }
 

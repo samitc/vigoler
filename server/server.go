@@ -95,6 +95,12 @@ func readBody(r *http.Request) string {
 	buf.ReadFrom(r.Body)
 	return buf.String()
 }
+func logVid(vid *video) {
+	if !vid.isLogged {
+		fmt.Println(vid)
+		vid.isLogged = true
+	}
+}
 func createVideos(url string) ([]video, error) {
 	async, err := videoUtils.Youtube.GetUrls(url)
 	if err != nil {
@@ -108,7 +114,7 @@ func createVideos(url string) ([]video, error) {
 		return nil, err
 	}
 	videos := make([]video, 0)
-	for _, url := range *urls.(*[]vigoler.VideoUrl) {
+	for _, url := range urls.([]vigoler.VideoUrl) {
 		videos = append(videos, video{videoURL: url, ID: createID(), Name: url.Name, IsLive: url.IsLive, isLogged: false})
 	}
 	return videos, nil
@@ -242,10 +248,7 @@ func checkFileDownloaded(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(vid)
 		} else {
 			_, err, _ := vid.async.Get()
-			if !vid.isLogged {
-				fmt.Println(vid)
-				vid.isLogged = true
-			}
+			logVid(vid)
 			if err != nil {
 				writeErrorToClient(w, err)
 			} else {
@@ -260,12 +263,12 @@ func download(w http.ResponseWriter, r *http.Request) {
 	if vid == nil {
 		w.WriteHeader(http.StatusNotFound)
 	} else if !vid.async.WillBlock() && !vid.IsLive {
-		fileName, err, warn := vid.async.Get()
+		fileName, err, _ := vid.async.Get()
 		// Get file extension and remove the '.'
-		vid.ext = path.Ext(fileName.(string))[1:]
-		if warn != "" {
-			fmt.Println(warn)
+		if fileName != nil {
+			vid.ext = path.Ext(fileName.(string))[1:]
 		}
+		logVid(vid)
 		if err != nil {
 			fmt.Println(err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -304,7 +307,8 @@ func waitAndExecute(timeEnv string, exec func()) {
 func main() {
 	you := vigoler.CreateYoutubeDlWrapper()
 	ff := vigoler.CreateFfmpegWrapper()
-	videoUtils = vigoler.VideoUtils{Youtube: &you, Ffmpeg: &ff}
+	curl := vigoler.CreateCurlWrapper()
+	videoUtils = vigoler.VideoUtils{Youtube: &you, Ffmpeg: &ff, Curl: &curl}
 	videosMap = make(map[string]*video)
 	router := mux.NewRouter()
 	router.HandleFunc("/videos", process).Methods("POST")
