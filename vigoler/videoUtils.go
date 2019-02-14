@@ -213,7 +213,7 @@ func (vu *VideoUtils) DownloadBestAndMerge(url VideoUrl, output string) (*Async,
 			_, err, warn := merge.Get()
 			wa.remove(merge)
 			tWarn += warn
-			async.SetResult(nil, err, tWarn)
+			async.SetResult(output, err, tWarn)
 		}
 		if _, err := os.Stat(output); err == nil || os.IsExist(err) {
 			os.Remove(videoPath)
