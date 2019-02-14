@@ -187,10 +187,13 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusInternalServerError)
 				} else {
 					vid.updateTime = time.Now()
-					if sizeInKb == -1 {
-						vid.async, err = videoUtils.DownloadBest(vid.videoURL, vigoler.ValidateFileName(vid.Name))
+					fileName := vigoler.ValidateFileName(vid.Name)
+					if strings.ToLower(os.Getenv("VIGOLER_DOWNLOAD_AND_MERGE")) == "true" {
+						vid.async, err = videoUtils.DownloadBestAndMerge(vid.videoURL, fileName, sizeInKb, os.Getenv("VIGOLER_MERGE_FORMAT"))
+					} else if sizeInKb == -1 {
+						vid.async, err = videoUtils.DownloadBest(vid.videoURL, fileName)
 					} else {
-						vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoURL, vigoler.ValidateFileName(vid.Name), sizeInKb)
+						vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoURL, fileName, sizeInKb)
 					}
 					if err != nil {
 						fmt.Println(err)

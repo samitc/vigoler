@@ -48,14 +48,8 @@ func getDefaultExtention(url VideoUrl) string {
 	return GetBestFormat(url.Formats, true, true).Ext
 }
 func downloadBestAndMerge(url VideoUrl, videoUtils *VideoUtils, outputFormat string, directory string, wg *sync.WaitGroup, sem *semaphore) (*Async, string) {
-	var format string
-	if outputFormat == "" {
-		format = getDefaultExtention(url)
-	} else {
-		format = outputFormat
-	}
-	fileName := ValidateFileName(url.Name) + "." + format
-	async, err := videoUtils.DownloadBestAndMerge(url, directory+string(os.PathSeparator)+fileName)
+	fileName := ValidateFileName(url.Name)
+	async, err := videoUtils.DownloadBestAndMerge(url, directory+string(os.PathSeparator)+fileName, -1, outputFormat)
 	if err != nil {
 		panic(err)
 	} else {
