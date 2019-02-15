@@ -338,9 +338,20 @@ func main() {
 	addr := os.Getenv("VIGOLER_LISTEN_ADDR")
 	muxHandlers := handlers.CORS(corsObj)(router)
 	isTLS := len(certFile) != 0 && len(keyFile) != 0
+	logName := os.Getenv("VIGOLER_LOG_NAME")
+	var logFile *log.Logger
+	if logName != "" {
+		file, err := os.OpenFile(logName, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		if err != nil {
+			panic(err)
+		}
+		defer file.Close()
+		logFile = log.New(file, "", 0)
+	}
+	server := &http.Server{Addr: addr, Handler: muxHandlers, ErrorLog: logFile}
 	if isTLS {
-		log.Fatal(http.ListenAndServeTLS(addr, certFile, keyFile, muxHandlers))
+		log.Fatal(server.ListenAndServeTLS(certFile, keyFile))
 	} else {
-		log.Fatal(http.ListenAndServe(addr, muxHandlers))
+		log.Fatal(server.ListenAndServe())
 	}
 }
