@@ -89,8 +89,8 @@ func finishManagerDownload(res downloadGo, finished []int, savePartIndex int, ou
 			savePartIndex = 1
 		} else {
 			finished = insertSort(finished, res.index)
-			finished, savePartIndex, err = copyParts(finished, savePartIndex, output, outputFile)
 		}
+		finished, savePartIndex, err = copyParts(finished, savePartIndex, output, outputFile)
 	}
 	return finished, savePartIndex, outputFile, err
 }
