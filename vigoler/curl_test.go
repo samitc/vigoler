@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strconv"
 	"testing"
+	"time"
 )
 
 func Test_finishManagerDownload(t *testing.T) {
@@ -50,4 +51,39 @@ func Test_finishManagerDownload(t *testing.T) {
 		})
 	}
 	os.Remove(fileName)
+}
+
+func TestCurlWrapper_downloadParts(t *testing.T) {
+	curl := CreateCurlWrapper()
+	timeoutFunc := func(d time.Duration, isFinish *bool, t *testing.T) {
+		<-time.After(d)
+		if !*isFinish {
+			panic("Test: " + t.Name() + " time out")
+		}
+	}
+	type args struct {
+		url              string
+		output           string
+		videoSizeInBytes int
+		wa               multipleWaitAble
+	}
+	tests := []struct {
+		name    string
+		curl    *CurlWrapper
+		args    args
+		wantErr bool
+	}{
+		{"SizeLessThenPartBug", &curl, args{"", "", 0, multipleWaitAble{}}, false},
+		{"SizeLessThenTwoPartsBug", &curl, args{"", "", minPartSizeInBytes + 1, multipleWaitAble{}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isFinish := false
+			go timeoutFunc(10*time.Second, &isFinish, t)
+			if err := tt.curl.downloadParts(tt.args.url, tt.args.output, tt.args.videoSizeInBytes, tt.args.wa); (err != nil) != tt.wantErr {
+				t.Errorf("CurlWrapper.downloadParts() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			isFinish = true
+		})
+	}
 }

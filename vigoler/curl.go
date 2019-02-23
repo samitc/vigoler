@@ -124,6 +124,11 @@ func downloadManagerHandle(numOfParts, numOfGoRot int, resChan chan downloadGo, 
 }
 func (curl *CurlWrapper) downloadParts(url, output string, videoSizeInBytes int, wa multipleWaitAble) error {
 	numOfParts := videoSizeInBytes/minPartSizeInBytes - 1
+	if numOfParts < 2 {
+		async := curl.runCurl(url, output, 0, -1)
+		_, err, _ := async.Get()
+		return err
+	}
 	numOfGoRot := (int)(math.Min((float64)(maxDownloadParts), (float64)(numOfParts)))
 	resChan := make(chan downloadGo)
 	workChan := make(chan int)
