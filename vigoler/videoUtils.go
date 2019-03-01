@@ -319,6 +319,6 @@ func (vu *VideoUtils) downloadBestMaxSize(url VideoUrl, output string, sizeInKBy
 }
 func (vu *VideoUtils) DownloadBestMaxSize(url VideoUrl, output string, sizeInKBytes int) (*Async, error) {
 	tempOutput := strconv.Itoa(vu.generateInt())
-	async, err := vu.downloadBestMaxSize(url, output, sizeInKBytes, GetFormatsOrder(url.Formats, true, true))
+	async, err := vu.downloadBestMaxSize(url, tempOutput, sizeInKBytes, GetFormatsOrder(url.Formats, true, true))
 	return vu.asyncRename(async, err, tempOutput, output)
 }
