@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 	str "strings"
 	"sync"
@@ -54,15 +55,9 @@ func (you *YoutubeDlWrapper) UpdateYoutubeDl() {
 		fmt.Println(err)
 	}
 }
-func createURL(url string) string {
-	urlLen := len(url)
-	if urlLen > 1 && url[urlLen-1] == '\n' {
-		urlLen--
-	}
-	if urlLen > 1 && url[urlLen-1] == '\r' {
-		urlLen--
-	}
-	return url[:urlLen]
+func createURL(urlStr string) string {
+	newURL, _ := url.Parse(urlStr)
+	return newURL.String()
 }
 func createSingleFormat(dMap map[string]interface{}) []Format {
 	url := createURL(dMap["url"].(string))
