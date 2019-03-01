@@ -82,7 +82,6 @@ func Test_getUrls(t *testing.T) {
 	sChan := make(chan string)
 	url := "https://openload.co/embed/video_id"
 	vidName := "movie.2018.720p.mp4"
-	vidURL := url
 	vidFormatURL := "https://openload.co/stream/video_id~1548610975~192.168.0.0~u-x4488e?mime=true"
 	vidIsLive := false
 	vidFormat := Format{url: vidFormatURL, formatID: "0", fileSize: -1, Ext: "mp4", protocol: "https", hasVideo: true, hasAudio: true}
@@ -109,7 +108,6 @@ func Test_getUrls(t *testing.T) {
 	}
 	for _, vid := range vidUrls {
 		assertString(t, "getUrls return video name", vid.Name, vidName)
-		assertString(t, "getUrls return video url", vid.url, vidURL)
 		assertBool(t, "getUrls return isLive", vid.IsLive, vidIsLive)
 		if len(vid.Formats) != 1 {
 			t.Errorf("getUrls number of formats = %v", len(vidUrls))

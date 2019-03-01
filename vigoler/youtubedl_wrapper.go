@@ -23,10 +23,11 @@ type Format struct {
 	protocol string
 }
 type VideoUrl struct {
-	Name    string
-	IsLive  bool
-	Formats []Format
-	url     string
+	url          string
+	Name         string
+	IsLive       bool
+	Formats      []Format
+	idInPlaylist int
 }
 type HttpError struct {
 	Video        string
@@ -95,12 +96,8 @@ func readFormats(dMap map[string]interface{}) []Format {
 	}
 	return formats
 }
-func getUrls(output *<-chan string, url string) ([]VideoUrl, error, string) {
-	const URL_NAME = "webpage_url"
-	const ALIVE_NAME = "is_live"
-	const TITLE_NAME = "title"
-	const EXT_NAME = "ext"
-	var videos []VideoUrl
+func getUrlData(output *<-chan string, url string) ([]map[string]interface{}, string, error) {
+	var mapData []map[string]interface{}
 	var err error
 	warnOutput := ""
 	videoIndex := 0
@@ -118,14 +115,7 @@ func getUrls(output *<-chan string, url string) ([]VideoUrl, error, string) {
 			if data == nil {
 				hasWarn = true
 			} else {
-				dMap := data.(map[string]interface{})
-				var isAlive bool
-				if dMap[ALIVE_NAME] == nil {
-					isAlive = false
-				} else {
-					isAlive = dMap[ALIVE_NAME].(bool)
-				}
-				videos = append(videos, VideoUrl{url: dMap[URL_NAME].(string), Name: dMap[TITLE_NAME].(string), IsLive: isAlive, Formats: readFormats(dMap)})
+				mapData = append(mapData, data.(map[string]interface{}))
 			}
 		}
 		if hasWarn {
@@ -143,45 +133,49 @@ func getUrls(output *<-chan string, url string) ([]VideoUrl, error, string) {
 		}
 		preWarnIndex = warnIndex
 	}
-	return videos, err, warnOutput
+	return mapData, warnOutput, err
 }
-func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
+func extractDataFromMap(dMap map[string]interface{}) (string, bool) {
+	const ALIVE_NAME = "is_live"
+	const TITLE_NAME = "title"
+	var isAlive bool
+	if dMap[ALIVE_NAME] == nil {
+		isAlive = false
+	} else {
+		isAlive = dMap[ALIVE_NAME].(bool)
+	}
+	return dMap[TITLE_NAME].(string), isAlive
+}
+func getUrls(output *<-chan string, url string) ([]VideoUrl, error, string) {
+	maps, warn, err := getUrlData(output, url)
+	var videos []VideoUrl
+	for i, dMap := range maps {
+		name, isLive := extractDataFromMap(dMap)
+		videos = append(videos, VideoUrl{url: url, idInPlaylist: i, Name: name, IsLive: isLive, Formats: readFormats(dMap)})
+	}
+	return videos, err, warn
+}
+func (youdown *YoutubeDlWrapper) getMetaData(url string) (*Async, *<-chan string, error) {
 	ctx := context.Background()
 	wa, output, err := youdown.app.runCommandChan(ctx, "-i", "-j", url)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
 	async := CreateAsyncWaitGroup(&wg, wa)
-	go func(async *Async, output *<-chan string, url string) {
-		defer async.wg.Done()
-		async.SetResult(getUrls(output, url))
-	}(&async, &output, url)
-	return &async, nil
+	return &async, &output, nil
 }
-func (youdown *YoutubeDlWrapper) GetRealUrl(url VideoUrl, format Format) (*Async, error) {
-	ctx := context.Background()
-	wa, output, err := youdown.app.runCommandChan(ctx, "-g", "-f", format.formatID, url.url)
+func (youdown *YoutubeDlWrapper) GetUrls(url string) (*Async, error) {
+	async, output, err := youdown.getMetaData(url)
 	if err != nil {
 		return nil, err
 	}
-	var wg sync.WaitGroup
-	wg.Add(1)
-	async := CreateAsyncWaitGroup(&wg, wa)
-	go func(async *Async, output *<-chan string) {
+	go func() {
 		defer async.wg.Done()
-		realVideoURL := ""
-		for s := range *output {
-			if realVideoURL != "" {
-				fmt.Println(s) //TODO: return error - should not happen
-			}
-			realVideoURL = s
-		}
-		realVideoURL = createURL(realVideoURL)
-		async.SetResult(&realVideoURL, nil, "")
-	}(&async, &output)
-	return &async, nil
+		async.SetResult(getUrls(output, url))
+	}()
+	return async, nil
 }
 func GetBestFormat(formats []Format, needVideo, needAudio bool) Format {
 	return GetFormatsOrder(formats, needVideo, needAudio)[0]
