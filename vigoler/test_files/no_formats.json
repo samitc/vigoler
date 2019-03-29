@@ -1,27 +1,35 @@
 {
-    "webpage_url_basename": "video_id",
-    "playlist": null,
-    "extractor_key": "Openload",
-    "playlist_index": null,
-    "fulltitle": "movie.2018.720p.mp4",
-    "title": "movie.2018.720p.mp4",
-    "_filename": "movie.2018.720p.mp4-video_id.mp4",
-    "format_id": "0",
-    "thumbnail": "https://thumb.oloadcdn.net/splash/video_id/thumb.jpg",
-    "format": "0 - unknown",
-    "url": "https://openload.co/stream/video_id~1548610975~192.168.0.0~u-x4488e?mime=true",
-    "id": "video_id",
-    "webpage_url": "https://openload.co/embed/video_id",
-    "ext": "mp4",
-    "display_id": "video_id",
-    "subtitles": null,
-    "extractor": "Openload",
-    "thumbnails": [
-        {
-            "url": "https://thumb.oloadcdn.net/splash/video_id/thumb.jpg",
-            "id": "0"
-        }
-    ],
-    "requested_subtitles": null,
-    "protocol": "https"
+  "webpage_url_basename": "video_id",
+  "playlist": null,
+  "extractor_key": "Openload",
+  "playlist_index": null,
+  "fulltitle": "movie.2018.720p.mp4",
+  "title": "movie.2018.720p.mp4",
+  "_filename": "movie.2018.720p.mp4-video_id.mp4",
+  "format_id": "0",
+  "http_headers": {
+    "Accept-Charset": "Accept-Charset",
+    "User-Agent": "User-Agent",
+    "Cookie": "Cookie",
+    "Accept-Language": "Accept-Language",
+    "Accept-Encoding": "Accept-Encoding",
+    "Accept": "Accept"
+  },
+  "thumbnail": "https://thumb.oloadcdn.net/splash/video_id/thumb.jpg",
+  "format": "0 - unknown",
+  "url": "https://openload.co/stream/video_id~1548610975~192.168.0.0~u-x4488e?mime=true",
+  "id": "video_id",
+  "webpage_url": "https://openload.co/embed/video_id",
+  "ext": "mp4",
+  "display_id": "video_id",
+  "subtitles": null,
+  "extractor": "Openload",
+  "thumbnails": [
+    {
+      "url": "https://thumb.oloadcdn.net/splash/video_id/thumb.jpg",
+      "id": "0"
+    }
+  ],
+  "requested_subtitles": null,
+  "protocol": "https"
 }
