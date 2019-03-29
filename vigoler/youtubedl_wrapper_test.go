@@ -84,7 +84,14 @@ func Test_getUrls(t *testing.T) {
 	vidName := "movie.2018.720p.mp4"
 	vidFormatURL := "https://openload.co/stream/video_id~1548610975~192.168.0.0~u-x4488e?mime=true"
 	vidIsLive := false
-	vidFormat := Format{url: vidFormatURL, formatID: "0", fileSize: -1, Ext: "mp4", protocol: "https", hasVideo: true, hasAudio: true}
+	headersMap := make(map[string]string)
+	headersMap["Accept-Charset"] = "Accept-Charset"
+	headersMap["User-Agent"] = "User-Agent"
+	headersMap["Cookie"] = "Cookie"
+	headersMap["Accept-Language"] = "Accept-Language"
+	headersMap["Accept-Encoding"] = "Accept-Encoding"
+	headersMap["Accept"] = "Accept"
+	vidFormat := Format{url: vidFormatURL, httpHeaders: headersMap, formatID: "0", fileSize: -1, Ext: "mp4", protocol: "https", hasVideo: true, hasAudio: true}
 	dat, err := ioutil.ReadFile("test_files/no_formats.json")
 	if err != nil {
 		t.Error(err)

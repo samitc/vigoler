@@ -3,6 +3,7 @@ package vigoler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -31,6 +32,18 @@ func timeStringToInt(s string) int {
 }
 func timeToSeconds(time string) int {
 	return timeStringToInt(time[6:8]) + 60*(timeStringToInt(time[3:5])+60*timeStringToInt(time[:2]))
+}
+func addFfmpegHeaders(args []string, headers *map[string]string) []string {
+	tempArgs := make([]string, 0, 2)
+	if headers != nil {
+		tempArgs = append(tempArgs, "-headers")
+		headerArg := ""
+		for k, v := range *headers {
+			headerArg += fmt.Sprintf("%s:%s\r\n", k, v)
+		}
+		tempArgs = append(tempArgs, headerArg)
+	}
+	return append(tempArgs, args...)
 }
 func processData(line string, sizeIndex int) (time, size int) {
 	splits := strings.Split(line, "=")
@@ -98,7 +111,7 @@ func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 	finalArgs = append(finalArgs, "-c", "copy", output)
 	return ff.runFFmpeg(nil, finalArgs...)
 }
-func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output string) (*Async, error) {
+func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output string, headers *map[string]string) (*Async, error) {
 	if len(url) == 0 {
 		return nil, &ArgumentError{stackTrack: debug.Stack(), argName: "url", argValue: url}
 	}
@@ -127,12 +140,25 @@ func (ff *FFmpegWrapper) Download(url string, setting DownloadSettings, output s
 		args = append(args, "-fs", strconv.Itoa(setting.MaxSizeInKb*kbToByte))
 	}
 	args = append(args, output)
+	args = addFfmpegHeaders(args, headers)
 	return ff.runFFmpeg(statsCallback, args...)
 }
+func (ff *FFmpegWrapper) DownloadSplitHeaders(url string, setting DownloadSettings, output string, headers map[string]string) (*Async, error) {
+	return ff.download(url, setting, output, &headers)
+}
+func (ff *FFmpegWrapper) DownloadSplit(url string, setting DownloadSettings, output string) (*Async, error) {
+	return ff.download(url, setting, output, nil)
+}
 
-// GetInputSize return the size of the input in KB.
-func (ff *FFmpegWrapper) GetInputSize(url string) (*Async, error) {
+func (ff *FFmpegWrapper) Download(url, output string) (*Async, error) {
+	return ff.download(url, DownloadSettings{}, output, nil)
+}
+func (ff *FFmpegWrapper) DownloadHeaders(url string, headers map[string]string, output string) (*Async, error) {
+	return ff.download(url, DownloadSettings{}, output, &headers)
+}
+func (ff *FFmpegWrapper) getInputSize(url string, headers *map[string]string) (*Async, error) {
 	args := []string{"-v", "error", "-show_entries", "format=size", "-of", "default=noprint_wrappers=1:nokey=1", url}
+	args = addFfmpegHeaders(args, headers)
 	wa, _, oChan, err := ff.ffprobe.runCommand(context.Background(), true, true, true, args...)
 	if err != nil {
 		return nil, err
@@ -152,4 +178,11 @@ func (ff *FFmpegWrapper) GetInputSize(url string) (*Async, error) {
 		async.SetResult((int)((float64)(sizeInBytes)*bytes2KB), err, "")
 	}()
 	return &async, nil
+}
+func (ff *FFmpegWrapper) GetInputSize(url string) (*Async, error) {
+	return ff.getInputSize(url, nil)
+}
+
+func (ff *FFmpegWrapper) GetInputSizeHeaders(url string, headers map[string]string) (*Async, error) {
+	return ff.getInputSize(url, &headers)
 }

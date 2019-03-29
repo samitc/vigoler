@@ -17,11 +17,12 @@ type Format struct {
 	url      string
 	formatID string
 	// size of the file in KB or -1 if the data is not available.
-	fileSize float64
-	Ext      string
-	hasVideo bool
-	hasAudio bool
-	protocol string
+	fileSize    float64
+	Ext         string
+	hasVideo    bool
+	hasAudio    bool
+	protocol    string
+	httpHeaders map[string]string
 }
 type VideoUrl struct {
 	url          string
@@ -59,39 +60,39 @@ func createURL(urlStr string) string {
 	newURL, _ := url.Parse(urlStr)
 	return newURL.String()
 }
-func createSingleFormat(dMap map[string]interface{}) []Format {
-	url := createURL(dMap["url"].(string))
-	formatID, _ := dMap["format_id"].(string)
-	ext := dMap["ext"].(string)
-	protocol := dMap["protocol"].(string)
-	return []Format{Format{fileSize: -1, url: url, formatID: formatID, Ext: ext, protocol: protocol, hasVideo: true, hasAudio: true}}
+func createSingleFormat(formatMap map[string]interface{}) Format {
+	var fileSize float64
+	if formatMap["filesize"] == nil {
+		fileSize = -1
+	} else {
+		fileSize = formatMap["filesize"].(float64) / 1024
+	}
+	url := createURL(formatMap["url"].(string))
+	formatID, _ := formatMap["format_id"].(string)
+	ext := formatMap["ext"].(string)
+	hasVideo := formatMap["vcodec"] != "none"
+	hasAudio := formatMap["acodec"] != "none"
+	protocol := formatMap["protocol"].(string)
+	httpHeaderMap := formatMap["http_headers"].(map[string]interface{})
+	httpHeaders := make(map[string]string)
+	for k, v := range httpHeaderMap {
+		httpHeaders[k] = v.(string)
+	}
+	return Format{fileSize: fileSize, url: url, formatID: formatID, Ext: ext, protocol: protocol, hasVideo: hasVideo, hasAudio: hasAudio, httpHeaders: httpHeaders}
 }
 func readFormats(dMap map[string]interface{}) []Format {
 	mapOfFormats := dMap["formats"]
 	if mapOfFormats == nil {
-		return createSingleFormat(dMap)
+		return []Format{createSingleFormat(dMap)}
 	}
 	listOfFormats := mapOfFormats.([]interface{})
 	formats := make([]Format, 0, len(listOfFormats))
 	for _, format := range listOfFormats {
-		formatMap := format.(map[string]interface{})
-		var fileSize float64
-		if formatMap["filesize"] == nil {
-			fileSize = -1
-		} else {
-			fileSize = formatMap["filesize"].(float64) / 1024
-		}
-		url := createURL(formatMap["url"].(string))
-		formatID, _ := formatMap["format_id"].(string)
-		ext := formatMap["ext"].(string)
-		hasVideo := formatMap["vcodec"] != "none"
-		hasAudio := formatMap["acodec"] != "none"
-		protocol := formatMap["protocol"].(string)
-		formats = append(formats, Format{fileSize: fileSize, url: url, formatID: formatID, Ext: ext, protocol: protocol, hasVideo: hasVideo, hasAudio: hasAudio})
+		formats = append(formats, createSingleFormat(format.(map[string]interface{})))
 	}
 	return formats
 }
-func getUrlData(output *<-chan string, url string) ([]map[string]interface{}, string, error) {
+func getURLData(output *<-chan string, url string) ([]map[string]interface{}, string, error) {
 	var mapData []map[string]interface{}
 	var err error
 	warnOutput := ""
@@ -142,7 +143,7 @@ func extractDataFromMap(dMap map[string]interface{}) (string, bool) {
 	return dMap[TITLE_NAME].(string), isAlive
 }
 func getUrls(output *<-chan string, url string) ([]VideoUrl, error, string) {
-	maps, warn, err := getUrlData(output, url)
+	maps, warn, err := getURLData(output, url)
 	var videos []VideoUrl
 	for i, dMap := range maps {
 		name, isLive := extractDataFromMap(dMap)

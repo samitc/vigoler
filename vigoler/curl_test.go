@@ -66,6 +66,7 @@ func TestCurlWrapper_downloadParts(t *testing.T) {
 		output           string
 		videoSizeInBytes int
 		wa               multipleWaitAble
+		headers          *map[string]string
 	}
 	tests := []struct {
 		name    string
@@ -73,14 +74,14 @@ func TestCurlWrapper_downloadParts(t *testing.T) {
 		args    args
 		wantErr bool
 	}{
-		{"SizeLessThenPartBug", &curl, args{"", "", 0, multipleWaitAble{}}, false},
-		{"SizeLessThenTwoPartsBug", &curl, args{"", "", minPartSizeInBytes + 1, multipleWaitAble{}}, false},
+		{"SizeLessThenPartBug", &curl, args{"", "", 0, multipleWaitAble{}, nil}, false},
+		{"SizeLessThenTwoPartsBug", &curl, args{"", "", minPartSizeInBytes + 1, multipleWaitAble{}, nil}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			isFinish := false
 			go timeoutFunc(10*time.Second, &isFinish, t)
-			if err := tt.curl.downloadParts(tt.args.url, tt.args.output, tt.args.videoSizeInBytes, tt.args.wa); (err != nil) != tt.wantErr {
+			if err := tt.curl.downloadParts(tt.args.url, tt.args.output, tt.args.videoSizeInBytes, tt.args.wa, tt.args.headers); (err != nil) != tt.wantErr {
 				t.Errorf("CurlWrapper.downloadParts() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			isFinish = true

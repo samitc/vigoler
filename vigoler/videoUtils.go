@@ -54,11 +54,11 @@ func addIndexToFileName(name string) string {
 	}
 	return name
 }
-func (vu *VideoUtils) chooseDownload(url, output, protocol string) (*Async, error) {
+func (vu *VideoUtils) chooseDownload(url, output, protocol string, headers map[string]string) (*Async, error) {
 	if protocol == "https" {
-		return vu.Curl.Download(url, output)
+		return vu.Curl.DownloadHeaders(url, headers, output)
 	}
-	return vu.Ffmpeg.Download(url, DownloadSettings{}, output)
+	return vu.Ffmpeg.DownloadHeaders(url, headers, output)
 }
 func (vu *VideoUtils) recreateURL(url VideoUrl, format Format) (Format, error) {
 	async, err := vu.Youtube.GetUrls(url.url)
@@ -97,7 +97,7 @@ func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, outputFile strin
 			lastErr, lastWarn = err, ""
 		} else {
 			var fAsync *Async
-			fAsync, err = vu.Ffmpeg.Download(format.url, setting, output)
+			fAsync, err = vu.Ffmpeg.DownloadSplit(format.url, setting, output)
 			if err != nil {
 				lastErr, lastWarn = err, ""
 			} else {
@@ -111,7 +111,7 @@ func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, outputFile strin
 		output = addIndexToFileName(output)
 		downloadVideo(setting, output)
 	}
-	fAsync, err := vu.Ffmpeg.Download(format.url, DownloadSettings{CallbackBeforeSplit: splitCallback, MaxSizeInKb: maxSizeInKb, MaxTimeInSec: maxTimeInSec, SizeSplitThreshold: sizeSplitThreshold, TimeSplitThreshold: timeSplitThreshold}, outputFile)
+	fAsync, err := vu.Ffmpeg.DownloadSplit(format.url, DownloadSettings{CallbackBeforeSplit: splitCallback, MaxSizeInKb: maxSizeInKb, MaxTimeInSec: maxTimeInSec, SizeSplitThreshold: sizeSplitThreshold, TimeSplitThreshold: timeSplitThreshold}, outputFile)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, outputFile strin
 }
 func (vu *VideoUtils) downloadFormat(format Format, output string) (*Async, error) {
 	output += "." + format.Ext
-	dAsync, err := vu.chooseDownload(format.url, output, format.protocol)
+	dAsync, err := vu.chooseDownload(format.url, output, format.protocol, format.httpHeaders)
 	if err != nil {
 		return nil, err
 	}
@@ -219,25 +219,25 @@ func (vu *VideoUtils) DownloadBestAndMerge(url VideoUrl, output string, maxSizeI
 	}()
 	return &async, nil
 }
-func (vu *VideoUtils) getBestFormatSize(async *Async, formats []Format, sizeInKBytes int) (*Format, error, string) {
+func (vu *VideoUtils) getBestFormatSize(async *Async, formats []Format, sizeInKBytes int) (*Format, string, error) {
 	for _, format := range formats {
 		if !async.isStopped {
-			as, err := vu.Ffmpeg.GetInputSize(format.url)
+			as, err := vu.Ffmpeg.GetInputSizeHeaders(format.url, format.httpHeaders)
 			if err != nil {
-				return nil, err, ""
+				return nil, "", err
 			}
 			size, err, warn := as.Get()
 			if err != nil {
-				return nil, err, warn
+				return nil, warn, err
 			}
 			if size.(int) < sizeInKBytes {
-				return &format, nil, ""
+				return &format, "", nil
 			}
 		} else {
-			return nil, &CancelError{}, ""
+			return nil, "", &CancelError{}
 		}
 	}
-	return nil, nil, ""
+	return nil, "", nil
 }
 func (vu *VideoUtils) findBestFormat(url VideoUrl, sizeInKBytes int, formats []Format, output string) (*Async, error) {
 	var wg sync.WaitGroup
@@ -245,7 +245,7 @@ func (vu *VideoUtils) findBestFormat(url VideoUrl, sizeInKBytes int, formats []F
 	wg.Add(1)
 	go func(async *Async, wg *sync.WaitGroup) {
 		defer wg.Done()
-		format, err, warn := vu.getBestFormatSize(async, formats, sizeInKBytes)
+		format, warn, err := vu.getBestFormatSize(async, formats, sizeInKBytes)
 		if err != nil {
 			async.SetResult(nil, err, warn)
 		} else {
@@ -253,7 +253,7 @@ func (vu *VideoUtils) findBestFormat(url VideoUrl, sizeInKBytes int, formats []F
 				async.SetResult(nil, &FileTooBigError{url: url}, warn)
 			} else {
 				output += "." + format.Ext
-				as, err := vu.chooseDownload(format.url, output, format.protocol)
+				as, err := vu.chooseDownload(format.url, output, format.protocol, format.httpHeaders)
 				if err != nil {
 					async.SetResult(nil, err, "")
 				} else {

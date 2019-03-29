@@ -2,6 +2,7 @@ package vigoler
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math"
 	"os"
@@ -27,12 +28,23 @@ type downloadGo struct {
 func CreateCurlWrapper() CurlWrapper {
 	return CurlWrapper{curl: externalApp{"curl"}}
 }
-func (curl *CurlWrapper) getVideoSize(url string) (int, error) {
-	_, oChan, err := curl.curl.runCommandChan(context.Background(), "-L", "-I", url)
+func addCurlHeaders(args []string, headers *map[string]string) []string {
+	if headers != nil {
+		for k, v := range *headers {
+			args = append(args, "-H")
+			args = append(args, fmt.Sprintf("%s:%s", k, v))
+		}
+	}
+	return args
+}
+func (curl *CurlWrapper) getVideoSize(url string, headers *map[string]string) (int, error) {
+	args := addCurlHeaders([]string{"-I", "-L"}, headers)
+	args = append(args, url)
+	_, oChan, err := curl.curl.runCommandChan(context.Background(), args...)
 	if err != nil {
 		return 0, err
 	}
-	var sizeInBytes int
+	sizeInBytes := -1
 	for s := range oChan {
 		if strings.HasPrefix(s, "Content-Length:") {
 			number := strings.Split(s, " ")[1]
@@ -41,13 +53,15 @@ func (curl *CurlWrapper) getVideoSize(url string) (int, error) {
 	}
 	return sizeInBytes, err
 }
-func (curl *CurlWrapper) runCurl(url, output string, startByte, endByte int) *Async {
+func (curl *CurlWrapper) runCurl(url, output string, startByte, endByte int, headers *map[string]string) *Async {
 	strStartByte := strconv.Itoa(startByte)
 	strEndByte := ""
 	if endByte != -1 {
 		strEndByte = strconv.Itoa(endByte)
 	}
-	wa, _ := curl.curl.runCommandWait(context.Background(), "-L", "--range", strStartByte+"-"+strEndByte, "-o", output, url)
+	args := addCurlHeaders([]string{"-L", "--range", strStartByte + "-" + strEndByte, "-o", output}, headers)
+	args = append(args, url)
+	wa, _ := curl.curl.runCommandWait(context.Background(), args...)
 	async := createAsyncWaitAble(wa)
 	return &async
 }
@@ -122,10 +136,10 @@ func downloadManagerHandle(numOfParts, numOfGoRot int, resChan chan downloadGo, 
 	}
 	return outputFile, nil
 }
-func (curl *CurlWrapper) downloadParts(url, output string, videoSizeInBytes int, wa multipleWaitAble) error {
+func (curl *CurlWrapper) downloadParts(url, output string, videoSizeInBytes int, wa multipleWaitAble, headers *map[string]string) error {
 	numOfParts := videoSizeInBytes/minPartSizeInBytes - 1
 	if numOfParts < 2 {
-		async := curl.runCurl(url, output, 0, -1)
+		async := curl.runCurl(url, output, 0, -1, headers)
 		_, err, _ := async.Get()
 		return err
 	}
@@ -135,7 +149,7 @@ func (curl *CurlWrapper) downloadParts(url, output string, videoSizeInBytes int,
 	for i := 0; i < numOfGoRot; i++ {
 		go func() {
 			for index := range workChan {
-				async := curl.runCurl(url, output+strconv.Itoa(index), index*minPartSizeInBytes, (index+1)*minPartSizeInBytes-1)
+				async := curl.runCurl(url, output+strconv.Itoa(index), index*minPartSizeInBytes, (index+1)*minPartSizeInBytes-1, headers)
 				wa.add(async)
 				_, err, _ := async.Get()
 				wa.remove(async)
@@ -148,7 +162,7 @@ func (curl *CurlWrapper) downloadParts(url, output string, videoSizeInBytes int,
 	if err != nil {
 		return err
 	}
-	async := curl.runCurl(url, output+"f", numOfParts*minPartSizeInBytes, -1)
+	async := curl.runCurl(url, output+"f", numOfParts*minPartSizeInBytes, -1, headers)
 	wa.add(async)
 	_, err, _ = async.Get()
 	wa.remove(async)
@@ -158,8 +172,8 @@ func (curl *CurlWrapper) downloadParts(url, output string, videoSizeInBytes int,
 	err = copyFile(output+"f", outputFile)
 	return err
 }
-func (curl *CurlWrapper) Download(url string, output string) (*Async, error) {
-	videoSizeInBytes, err := curl.getVideoSize(url)
+func (curl *CurlWrapper) download(url, output string, headers *map[string]string) (*Async, error) {
+	videoSizeInBytes, err := curl.getVideoSize(url, headers)
 	if err != nil {
 		return nil, err
 	}
@@ -171,22 +185,40 @@ func (curl *CurlWrapper) Download(url string, output string) (*Async, error) {
 		defer wg.Done()
 		var err error
 		if videoSizeInBytes < minPartSizeInBytes {
-			_, err, _ = curl.runCurl(url, output, 0, -1).Get()
+			_, err, _ = curl.runCurl(url, output, 0, -1, headers).Get()
 		} else {
-			err = curl.downloadParts(url, output, videoSizeInBytes, wa)
+			err = curl.downloadParts(url, output, videoSizeInBytes, wa, headers)
 		}
 		async.SetResult(nil, err, "")
 	}()
 	return &async, nil
 }
-func (curl *CurlWrapper) GetVideoSize(url string) (*Async, error) {
+func (curl *CurlWrapper) Download(url, output string) (*Async, error) {
+	return curl.download(url, output, nil)
+}
+func (curl *CurlWrapper) DownloadHeaders(url string, headers map[string]string, output string) (*Async, error) {
+	return curl.download(url, output, &headers)
+}
+func (curl *CurlWrapper) GetInputSize(url string) (*Async, error) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	async := CreateAsyncWaitGroup(&wg, nil)
 	go func() {
 		defer wg.Done()
 		bytes2KB := 1.0 / 1024
-		size, err := curl.getVideoSize(url)
+		size, err := curl.getVideoSize(url, nil)
+		async.SetResult((int)((float64)(size)*bytes2KB), err, "")
+	}()
+	return &async, nil
+}
+func (curl *CurlWrapper) GetInputSizeHeaders(url string, headers map[string]string) (*Async, error) {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	async := CreateAsyncWaitGroup(&wg, nil)
+	go func() {
+		defer wg.Done()
+		bytes2KB := 1.0 / 1024
+		size, err := curl.getVideoSize(url, &headers)
 		async.SetResult((int)((float64)(size)*bytes2KB), err, "")
 	}()
 	return &async, nil
