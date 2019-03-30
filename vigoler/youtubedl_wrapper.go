@@ -133,7 +133,7 @@ func getURLData(output *<-chan string, url string) ([]map[string]interface{}, st
 }
 func extractDataFromMap(dMap map[string]interface{}) (string, bool) {
 	const ALIVE_NAME = "is_live"
-	const TITLE_NAME = "title"
+	const TITLE_NAME = "fulltitle"
 	var isAlive bool
 	if dMap[ALIVE_NAME] == nil {
 		isAlive = false

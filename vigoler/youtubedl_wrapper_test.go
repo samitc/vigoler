@@ -81,7 +81,7 @@ func assert(t *testing.T, desc string, got, expected interface{}) {
 func Test_getUrls(t *testing.T) {
 	sChan := make(chan string)
 	url := "https://openload.co/embed/video_id"
-	vidName := "movie.2018.720p.mp4"
+	vidName := "fmovie.2018.720p.mp4"
 	vidFormatURL := "https://openload.co/stream/video_id~1548610975~192.168.0.0~u-x4488e?mime=true"
 	vidIsLive := false
 	headersMap := make(map[string]string)
