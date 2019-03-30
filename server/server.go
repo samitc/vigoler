@@ -43,9 +43,17 @@ type video struct {
 	isLogged   bool
 }
 
+func (vid *video) StringInitData() string {
+	return fmt.Sprintf("id=%s, name=%s, url=%v", vid.ID, vid.Name, vid.videoURL)
+}
+func (vid *video) StringData() string {
+	_, err, warn := vid.async.Get()
+	return fmt.Sprintf("id=%s, ext=%s, update time=%v, error=%v, warn=%s", vid.ID, vid.ext, vid.updateTime, err, warn)
+}
+
 func (vid *video) String() string {
 	_, err, warn := vid.async.Get()
-	return fmt.Sprintf("id=%s, name=%s, ext=%s, url=%v,update time=%v, error=%v, warn=%s",
+	return fmt.Sprintf("id=%s, name=%s, ext=%s, url=%v, update time=%v, error=%v, warn=%s",
 		vid.ID, vid.Name, vid.ext, vid.videoURL, vid.updateTime, err, warn)
 }
 
@@ -97,7 +105,7 @@ func readBody(r *http.Request) string {
 }
 func logVid(vid *video) {
 	if !vid.isLogged {
-		fmt.Println(vid)
+		fmt.Println(vid.StringData())
 		vid.isLogged = true
 	}
 }
@@ -115,7 +123,9 @@ func createVideos(url string) ([]video, error) {
 	}
 	videos := make([]video, 0)
 	for _, url := range urls.([]vigoler.VideoUrl) {
-		videos = append(videos, video{videoURL: url, ID: createID(), Name: url.Name, IsLive: url.IsLive, isLogged: false})
+		vid := video{videoURL: url, ID: createID(), Name: url.Name, IsLive: url.IsLive, isLogged: false}
+		fmt.Println(vid.StringInitData())
+		videos = append(videos, vid)
 	}
 	return videos, nil
 }
