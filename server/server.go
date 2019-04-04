@@ -67,10 +67,11 @@ func serverCleaner() {
 		if (int)(curTime.Sub(v.updateTime).Seconds()) > maxTimeDiff {
 			if v.async != nil {
 				err := v.async.Stop()
-				if err != nil {
-					fmt.Println(err)
+				if _, ok := err.(*vigoler.CancelError); err != nil && !ok {
+					fmt.Println(v, err)
 				}
 			}
+			logVid(v)
 			if v.parentID != "" {
 				if val, ok := videosMap[v.parentID]; ok {
 					i := 0
