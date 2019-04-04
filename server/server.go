@@ -15,7 +15,7 @@ import (
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	"github.com/samitc/vigoler/vigoler"
+	"github.com/samitc/vigoler/2/vigoler"
 	"github.com/segmentio/ksuid"
 )
 

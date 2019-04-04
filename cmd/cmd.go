@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	. "github.com/samitc/vigoler/vigoler"
+	. "github.com/samitc/vigoler/2/vigoler"
 )
 
 type empty struct{}
