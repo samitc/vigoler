@@ -59,7 +59,7 @@ func (curl *CurlWrapper) runCurl(url, output string, startByte, endByte int, hea
 	if endByte != -1 {
 		strEndByte = strconv.Itoa(endByte)
 	}
-	args := addCurlHeaders([]string{"-L", "--range", strStartByte + "-" + strEndByte, "-o", output}, headers)
+	args := addCurlHeaders([]string{"-L", "-f", "--range", strStartByte + "-" + strEndByte, "-o", output}, headers)
 	args = append(args, url)
 	wa, err := curl.curl.runCommandWait(context.Background(), args...)
 	async := createAsyncWaitAble(wa)
@@ -95,6 +95,7 @@ func copyParts(a []int, curPart int, output string, outputFile *os.File) ([]int,
 func finishManagerDownload(res downloadGo, finished []int, savePartIndex int, output string, outputFile *os.File) ([]int, int, *os.File, error) {
 	var err error
 	if res.err != nil {
+		finished = append(finished, res.index)
 		err = res.err
 	} else {
 		if res.index == 0 {
@@ -108,6 +109,46 @@ func finishManagerDownload(res downloadGo, finished []int, savePartIndex int, ou
 	}
 	return finished, savePartIndex, outputFile, err
 }
+func abortCurl(workChan chan int, resChan chan downloadGo, numOfGoRot int, finished []int, output string, outputFile *os.File) error {
+	go func(numToSend int) {
+		for i := 0; i < numToSend; i++ {
+			workChan <- -1
+		}
+	}(numOfGoRot)
+	var err error = &CancelError{}
+	for res := range resChan {
+		if _, ok := res.err.(*CancelError); ok {
+			numOfGoRot--
+			if numOfGoRot == 0 {
+				close(resChan)
+				break
+			}
+		} else {
+			nErr := os.Remove(output + strconv.Itoa(res.index))
+			if _, ok := err.(*CancelError); ok && nErr != nil {
+				err = nErr
+			}
+			if res.err != nil {
+				err = res.err
+			}
+		}
+	}
+	nErr := outputFile.Close()
+	if _, ok := err.(*CancelError); ok && nErr != nil {
+		err = nErr
+	}
+	for _, f := range finished {
+		nErr := os.Remove(output + strconv.Itoa(f))
+		if _, ok := err.(*CancelError); ok && nErr != nil {
+			err = nErr
+		}
+	}
+	nErr = os.Remove(output)
+	if _, ok := err.(*CancelError); ok && nErr != nil {
+		err = nErr
+	}
+	return err
+}
 func downloadManagerHandle(numOfParts, numOfGoRot int, resChan chan downloadGo, workChan chan int, cancelChan chan error, output string) (*os.File, error) {
 	curPartIndex := 0
 	savePartIndex := 0
@@ -117,49 +158,14 @@ func downloadManagerHandle(numOfParts, numOfGoRot int, resChan chan downloadGo, 
 	for curPartIndex < numOfParts {
 		select {
 		case _ = <-cancelChan:
-			go func(numToSend int) {
-				for i := 0; i < numToSend; i++ {
-					workChan <- -1
-				}
-			}(numOfGoRot)
+			err := abortCurl(workChan, resChan, numOfGoRot, finished, output, outputFile)
 			curPartIndex = numOfParts
-			var err error = &CancelError{}
-			for res := range resChan {
-				if _, ok := res.err.(*CancelError); ok {
-					numOfGoRot--
-					if numOfGoRot == 0 {
-						close(resChan)
-						cancelChan <- err
-						break
-					}
-				} else {
-					nErr := os.Remove(output + strconv.Itoa(res.index))
-					if _, ok := err.(*CancelError); ok && nErr != nil {
-						err = nErr
-					}
-					if res.err != nil {
-						err = res.err
-					}
-				}
-			}
-			nErr := outputFile.Close()
-			if _, ok := err.(*CancelError); ok && nErr != nil {
-				err = nErr
-			}
-			for _, f := range finished {
-				nErr := os.Remove(output + strconv.Itoa(f))
-				if _, ok := err.(*CancelError); ok && nErr != nil {
-					err = nErr
-				}
-			}
-			nErr = os.Remove(output)
-			if _, ok := err.(*CancelError); ok && nErr != nil {
-				err = nErr
-			}
+			cancelChan <- err
 			return nil, err
 		case downloadRes := <-resChan:
 			finished, savePartIndex, outputFile, err = finishManagerDownload(downloadRes, finished, savePartIndex, output, outputFile)
 			if err != nil {
+				_ = abortCurl(workChan, resChan, numOfGoRot, finished, output, outputFile)
 				return outputFile, err
 			}
 		case workChan <- curPartIndex:
@@ -169,6 +175,7 @@ func downloadManagerHandle(numOfParts, numOfGoRot int, resChan chan downloadGo, 
 	for res := range resChan {
 		finished, savePartIndex, outputFile, err = finishManagerDownload(res, finished, savePartIndex, output, outputFile)
 		if err != nil {
+			_ = abortCurl(workChan, resChan, numOfGoRot, finished, output, outputFile)
 			return outputFile, err
 		}
 		if savePartIndex == curPartIndex {
