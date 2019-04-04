@@ -1,7 +1,6 @@
 package vigoler
 
 import (
-	"fmt"
 	"sync"
 )
 
@@ -19,6 +18,8 @@ type WaitAble interface {
 	Wait() error
 	Stop() error
 }
+
+// Deprecated: Do not use. Implement with chanel instead.
 type multipleWaitAble struct {
 	waitAbles []*Async
 	isStopped bool
@@ -70,7 +71,7 @@ func CreateAsyncWaitGroup(wg *sync.WaitGroup, wa WaitAble) Async {
 	return Async{wg: wg, wa: wa, isFinish: false, isStopped: false}
 }
 func CreateAsyncFromAsyncAsWaitAble(wg *sync.WaitGroup, async *Async) Async {
-	return Async{wg: wg, wa: async.wa, isFinish: false, isStopped: false, async: async}
+	return Async{wg: wg, wa: nil, isFinish: false, isStopped: false, async: async}
 }
 func (async *Async) SetResult(result interface{}, err error, warningOutput string) {
 	async.result = result
@@ -80,23 +81,27 @@ func (async *Async) SetResult(result interface{}, err error, warningOutput strin
 }
 func (async *Async) Stop() error {
 	async.isStopped = true
+	var err error = nil
 	if async.async != nil {
-		err := async.async.Stop()
-		if err != nil {
-			fmt.Println(err)
-		}
+		err = async.async.Stop()
 	}
 	if async.wa != nil {
-		return async.wa.Stop()
+		nErr := async.wa.Stop()
+		if err == nil && nErr != nil {
+			err = nErr
+		}
 	}
-	return nil
+	return err
 }
 func (async *Async) Get() (interface{}, error, string) {
 	if async.wg != nil {
 		async.wg.Wait()
 		async.wg = nil
 	} else if async.wa != nil {
-		async.wa.Wait()
+		nErr := async.wa.Wait()
+		if async.err == nil {
+			async.err = nErr
+		}
 		async.wa = nil
 	}
 	err := async.err
