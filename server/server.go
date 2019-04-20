@@ -320,7 +320,15 @@ func waitAndExecute(timeEnv string, exec func()) {
 }
 func main() {
 	you := vigoler.CreateYoutubeDlWrapper()
-	ff := vigoler.CreateFfmpegWrapper()
+	maxLiveWithoutOutput := -1
+	if maxLiveWithoutOutputEnv, ok := os.LookupEnv("VIGOLER_LIVE_STOP_TIMEOUT"); ok {
+		var err error
+		maxLiveWithoutOutput, err = strconv.Atoi(maxLiveWithoutOutputEnv)
+		if err != nil {
+			panic(err)
+		}
+	}
+	ff := vigoler.CreateFfmpegWrapper(maxLiveWithoutOutput)
 	curl := vigoler.CreateCurlWrapper()
 	videoUtils = vigoler.VideoUtils{Youtube: &you, Ffmpeg: &ff, Curl: &curl}
 	videosMap = make(map[string]*video)
