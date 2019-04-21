@@ -4,15 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type FFmpegWrapper struct {
-	ffmpeg  externalApp
-	ffprobe externalApp
+	ffmpeg                        externalApp
+	ffprobe                       externalApp
+	maxSecondsWithoutOutputToStop int
 }
 type DownloadCallback func(url string, setting DownloadSettings, output string)
 type DownloadSettings struct {
@@ -23,9 +26,19 @@ type DownloadSettings struct {
 	CallbackBeforeSplit DownloadCallback
 }
 type FFmpegState func(sizeInKb, timeInSeconds int)
+type ffmpegWaitAble struct {
+	*commandWaitAble
+}
 
-func CreateFfmpegWrapper() FFmpegWrapper {
-	return FFmpegWrapper{ffmpeg: externalApp{"ffmpeg"}, ffprobe: externalApp{"ffprobe"}}
+func (fwa *ffmpegWaitAble) Stop() error {
+	err := fwa.cmd.Process.Signal(os.Interrupt)
+	if err != nil {
+		return fwa.commandWaitAble.Stop()
+	}
+	return fwa.cmd.Process.Signal(os.Interrupt)
+}
+func CreateFfmpegWrapper(maxSecondsWithoutOutputToStop int) FFmpegWrapper {
+	return FFmpegWrapper{ffmpeg: externalApp{"ffmpeg"}, ffprobe: externalApp{"ffprobe"}, maxSecondsWithoutOutputToStop: maxSecondsWithoutOutputToStop}
 }
 func timeStringToInt(s string) int {
 	return int((s[0]-'0')*10 + s[1] - '0')
@@ -54,14 +67,14 @@ func processData(line string, sizeIndex int) (time, size int) {
 	time = timeToSeconds(splits[sizeIndex+1])
 	return
 }
-func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (*Async, error) {
+func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (WaitAble, *Async, error) {
 	// ffmpeg command template: ffmpeg -v warning -stats [args]
 	finalArgs := make([]string, 0, 3+len(args))
 	finalArgs = append(finalArgs, "-v", "warning", "-stats")
 	finalArgs = append(finalArgs, args...)
 	wa, _, oChan, err := ff.ffmpeg.runCommand(context.Background(), true, true, false, finalArgs...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -100,7 +113,7 @@ func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (*
 		}
 		async.SetResult(nil, err, warn)
 	}()
-	return &async, nil
+	return &ffmpegWaitAble{wa.(*commandWaitAble)}, &async, nil
 }
 func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 	// [-i {input}] -c copy output
@@ -109,7 +122,8 @@ func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 		finalArgs = append(finalArgs, "-i", i)
 	}
 	finalArgs = append(finalArgs, "-c", "copy", output)
-	return ff.runFFmpeg(nil, finalArgs...)
+	_, async, err := ff.runFFmpeg(nil, finalArgs...)
+	return async, err
 }
 func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output string, headers *map[string]string) (*Async, error) {
 	if len(url) == 0 {
@@ -118,6 +132,7 @@ func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output s
 	const kbToByte = 1024
 	var statsCallback FFmpegState
 	args := []string{"-i", url, "-c", "copy"}
+	var ffmpegWA WaitAble
 	if setting.CallbackBeforeSplit != nil && (setting.SizeSplitThreshold > 0 || setting.TimeSplitThreshold > 0) {
 		if setting.SizeSplitThreshold <= 0 {
 			setting.SizeSplitThreshold = setting.MaxSizeInKb
@@ -126,7 +141,17 @@ func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output s
 			setting.TimeSplitThreshold = setting.MaxTimeInSec
 		}
 		isAlreadyCalled := false
+		funcTime := func() {
+			_ = ffmpegWA.Stop()
+		}
+		var curFuncTime *time.Timer = nil
+		if ff.maxSecondsWithoutOutputToStop != -1 {
+			curFuncTime = time.AfterFunc(time.Duration(ff.maxSecondsWithoutOutputToStop)*time.Second, funcTime)
+		}
 		statsCallback = func(sizeInKb, timeInSec int) {
+			if curFuncTime != nil {
+				curFuncTime.Reset(time.Duration(ff.maxSecondsWithoutOutputToStop) * time.Second)
+			}
 			if !isAlreadyCalled && (timeInSec > setting.TimeSplitThreshold || sizeInKb > setting.SizeSplitThreshold) {
 				go setting.CallbackBeforeSplit(url, setting, output)
 				isAlreadyCalled = true
@@ -141,7 +166,8 @@ func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output s
 	}
 	args = append(args, output)
 	args = addFfmpegHeaders(args, headers)
-	return ff.runFFmpeg(statsCallback, args...)
+	ffmpegWA, async, err := ff.runFFmpeg(statsCallback, args...)
+	return async, err
 }
 func (ff *FFmpegWrapper) DownloadSplitHeaders(url string, setting DownloadSettings, output string, headers map[string]string) (*Async, error) {
 	return ff.download(url, setting, output, &headers)
@@ -149,7 +175,6 @@ func (ff *FFmpegWrapper) DownloadSplitHeaders(url string, setting DownloadSettin
 func (ff *FFmpegWrapper) DownloadSplit(url string, setting DownloadSettings, output string) (*Async, error) {
 	return ff.download(url, setting, output, nil)
 }
-
 func (ff *FFmpegWrapper) Download(url, output string) (*Async, error) {
 	return ff.download(url, DownloadSettings{}, output, nil)
 }
@@ -182,7 +207,6 @@ func (ff *FFmpegWrapper) getInputSize(url string, headers *map[string]string) (*
 func (ff *FFmpegWrapper) GetInputSize(url string) (*Async, error) {
 	return ff.getInputSize(url, nil)
 }
-
 func (ff *FFmpegWrapper) GetInputSizeHeaders(url string, headers map[string]string) (*Async, error) {
 	return ff.getInputSize(url, &headers)
 }
