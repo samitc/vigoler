@@ -40,7 +40,7 @@ type HttpError struct {
 type DownloadStatus func(url VideoUrl, percent, size float32)
 
 func (format Format) String() string {
-	return fmt.Sprintf("id=%s, size=%v, ext=%s, protocol=%s", format.formatID, format.fileSize, format.Ext, format.protocol)
+	return fmt.Sprintf("id=%s, size=%v, height=%v, width=%v, ext=%s, protocol=%s", format.formatID, format.fileSize, format.height, format.width, format.Ext, format.protocol)
 }
 func (e *HttpError) Error() string {
 	return fmt.Sprintf("Http error while requested %s. error message is: %s", e.Video, e.ErrorMessage)
@@ -75,7 +75,7 @@ func createSingleFormat(formatMap map[string]interface{}) Format {
 	hasVideo := formatMap["vcodec"] != "none"
 	hasAudio := formatMap["acodec"] != "none"
 	var w, h float64
-	if hasVideo {
+	if formatMap["width"] != nil {
 		w = formatMap["width"].(float64)
 		h = formatMap["height"].(float64)
 	} else {
