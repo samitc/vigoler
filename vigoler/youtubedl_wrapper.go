@@ -23,6 +23,8 @@ type Format struct {
 	hasAudio    bool
 	protocol    string
 	httpHeaders map[string]string
+	height      float64
+	width       float64
 }
 type VideoUrl struct {
 	url          string
@@ -38,7 +40,7 @@ type HttpError struct {
 type DownloadStatus func(url VideoUrl, percent, size float32)
 
 func (format Format) String() string {
-	return fmt.Sprintf("id=%s, size=%v, ext=%s, protocol=%s", format.formatID, format.fileSize, format.Ext, format.protocol)
+	return fmt.Sprintf("id=%s, size=%v, height=%v, width=%v, ext=%s, protocol=%s", format.formatID, format.fileSize, format.height, format.width, format.Ext, format.protocol)
 }
 func (e *HttpError) Error() string {
 	return fmt.Sprintf("Http error while requested %s. error message is: %s", e.Video, e.ErrorMessage)
@@ -72,13 +74,31 @@ func createSingleFormat(formatMap map[string]interface{}) Format {
 	ext := formatMap["ext"].(string)
 	hasVideo := formatMap["vcodec"] != "none"
 	hasAudio := formatMap["acodec"] != "none"
+	var w, h float64
+	if formatMap["width"] != nil {
+		w = formatMap["width"].(float64)
+		h = formatMap["height"].(float64)
+	} else {
+		w = -1
+		h = -1
+	}
 	protocol := formatMap["protocol"].(string)
 	httpHeaderMap := formatMap["http_headers"].(map[string]interface{})
 	httpHeaders := make(map[string]string)
 	for k, v := range httpHeaderMap {
 		httpHeaders[k] = v.(string)
 	}
-	return Format{fileSize: fileSize, url: url, formatID: formatID, Ext: ext, protocol: protocol, hasVideo: hasVideo, hasAudio: hasAudio, httpHeaders: httpHeaders}
+	return Format{fileSize: fileSize, url: url, formatID: formatID, Ext: ext, protocol: protocol, hasVideo: hasVideo, hasAudio: hasAudio, httpHeaders: httpHeaders, height: h, width: w}
+}
+func sortFormats(formats []Format) {
+	l := len(formats)
+	for i := 0; i < l-1; i++ {
+		if formats[i].width > formats[i+1].width && formats[i].height > formats[i+1].height && formats[i].hasAudio == formats[i+1].hasAudio {
+			tempFormat := formats[i]
+			formats[i] = formats[i+1]
+			formats[i+1] = tempFormat
+		}
+	}
 }
 func readFormats(dMap map[string]interface{}) []Format {
 	mapOfFormats := dMap["formats"]
@@ -90,6 +110,7 @@ func readFormats(dMap map[string]interface{}) []Format {
 	for _, format := range listOfFormats {
 		formats = append(formats, createSingleFormat(format.(map[string]interface{})))
 	}
+	sortFormats(formats)
 	return formats
 }
 func getURLData(output *<-chan string, url string) ([]map[string]interface{}, string, error) {
