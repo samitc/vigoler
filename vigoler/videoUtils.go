@@ -66,9 +66,13 @@ func (vu *VideoUtils) recreateURL(url VideoUrl, format Format) (Format, error) {
 		return Format{}, err
 	}
 	videos, err, _ := async.Get()
-	for _, form := range (videos.([]VideoUrl))[url.idInPlaylist].Formats {
-		if form.formatID == format.formatID {
-			return form, nil
+	for _, video := range videos.([]VideoUrl) {
+		if url.ID == video.ID {
+			for _, form := range video.Formats {
+				if form.formatID == format.formatID {
+					return form, nil
+				}
+			}
 		}
 	}
 	return Format{}, errors.New("format not found")
