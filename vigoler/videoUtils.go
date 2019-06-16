@@ -61,14 +61,21 @@ func (vu *VideoUtils) chooseDownload(url, output, protocol string, headers map[s
 	return vu.Ffmpeg.DownloadHeaders(url, headers, output)
 }
 func (vu *VideoUtils) recreateURL(url VideoUrl, format Format) (Format, error) {
-	async, err := vu.Youtube.GetUrls(url.url)
-	if err != nil {
-		return Format{}, err
-	}
-	videos, err, _ := async.Get()
-	for _, form := range (videos.([]VideoUrl))[url.idInPlaylist].Formats {
-		if form.formatID == format.formatID {
-			return form, nil
+	const retryingTime = 2
+	for i := 0; i < retryingTime; i++ {
+		async, err := vu.Youtube.GetUrls(url.url)
+		if err != nil {
+			return Format{}, err
+		}
+		videos, err, _ := async.Get()
+		for _, video := range videos.([]VideoUrl) {
+			if url.ID == video.ID {
+				for _, form := range video.Formats {
+					if form.formatID == format.formatID {
+						return form, nil
+					}
+				}
+			}
 		}
 	}
 	return Format{}, errors.New("format not found")

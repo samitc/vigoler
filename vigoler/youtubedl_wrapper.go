@@ -27,11 +27,11 @@ type Format struct {
 	width       float64
 }
 type VideoUrl struct {
-	url          string
-	Name         string
-	IsLive       bool
-	Formats      []Format
-	idInPlaylist int
+	url     string
+	ID      string
+	Name    string
+	IsLive  bool
+	Formats []Format
 }
 type HttpError struct {
 	Video        string
@@ -152,23 +152,24 @@ func getURLData(output *<-chan string, url string) ([]map[string]interface{}, st
 	}
 	return mapData, warnOutput, err
 }
-func extractDataFromMap(dMap map[string]interface{}) (string, bool) {
+func extractDataFromMap(dMap map[string]interface{}) (string, string, bool) {
 	const ALIVE_NAME = "is_live"
 	const TITLE_NAME = "fulltitle"
+	const ID_NAME = "id"
 	var isAlive bool
 	if dMap[ALIVE_NAME] == nil {
 		isAlive = false
 	} else {
 		isAlive = dMap[ALIVE_NAME].(bool)
 	}
-	return dMap[TITLE_NAME].(string), isAlive
+	return dMap[ID_NAME].(string), dMap[TITLE_NAME].(string), isAlive
 }
 func getUrls(output *<-chan string, url string) ([]VideoUrl, error, string) {
 	maps, warn, err := getURLData(output, url)
 	var videos []VideoUrl
-	for i, dMap := range maps {
-		name, isLive := extractDataFromMap(dMap)
-		videos = append(videos, VideoUrl{url: url, idInPlaylist: i, Name: name, IsLive: isLive, Formats: readFormats(dMap)})
+	for _, dMap := range maps {
+		id, name, isLive := extractDataFromMap(dMap)
+		videos = append(videos, VideoUrl{url: url, ID: id, Name: name, IsLive: isLive, Formats: readFormats(dMap)})
 	}
 	return videos, err, warn
 }
