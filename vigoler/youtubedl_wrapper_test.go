@@ -8,18 +8,18 @@ import (
 
 func TestFormats(t *testing.T) {
 	formatsArray := []Format{
-		Format{formatID: "1", hasAudio: true, hasVideo: false},
-		Format{formatID: "2", hasAudio: true, hasVideo: false},
-		Format{formatID: "3", hasAudio: false, hasVideo: true},
-		Format{formatID: "4", hasAudio: false, hasVideo: true},
-		Format{formatID: "5", hasAudio: false, hasVideo: true},
-		Format{formatID: "6", hasAudio: false, hasVideo: true},
-		Format{formatID: "7", hasAudio: true, hasVideo: true},
-		Format{formatID: "8", hasAudio: true, hasVideo: true},
-		Format{formatID: "9", hasAudio: true, hasVideo: true},
-		Format{formatID: "10", hasAudio: true, hasVideo: true},
-		Format{formatID: "11", hasAudio: true, hasVideo: true},
-		Format{formatID: "12", hasAudio: true, hasVideo: true},
+		{formatID: "1", hasAudio: true, hasVideo: false},
+		{formatID: "2", hasAudio: true, hasVideo: false},
+		{formatID: "3", hasAudio: false, hasVideo: true},
+		{formatID: "4", hasAudio: false, hasVideo: true},
+		{formatID: "5", hasAudio: false, hasVideo: true},
+		{formatID: "6", hasAudio: false, hasVideo: true},
+		{formatID: "7", hasAudio: true, hasVideo: true},
+		{formatID: "8", hasAudio: true, hasVideo: true},
+		{formatID: "9", hasAudio: true, hasVideo: true},
+		{formatID: "10", hasAudio: true, hasVideo: true},
+		{formatID: "11", hasAudio: true, hasVideo: true},
+		{formatID: "12", hasAudio: true, hasVideo: true},
 	}
 	reverse := func(rFormats []Format) []Format {
 		formats := append(rFormats[:0:0], rFormats...)
@@ -64,14 +64,10 @@ func TestFormats(t *testing.T) {
 	})
 }
 func assertString(t *testing.T, desc string, got, expected string) {
-	if got != expected {
-		t.Errorf("%s = %v, wanted = %v", desc, got, expected)
-	}
+	assert(t, desc, got, expected)
 }
 func assertBool(t *testing.T, desc string, got, expected bool) {
-	if got != expected {
-		t.Errorf("%s = %v, wanted = %v", desc, got, expected)
-	}
+	assert(t, desc, got, expected)
 }
 func assert(t *testing.T, desc string, got, expected interface{}) {
 	if !reflect.DeepEqual(got, expected) {
@@ -91,7 +87,7 @@ func Test_getUrls(t *testing.T) {
 	headersMap["Accept-Language"] = "Accept-Language"
 	headersMap["Accept-Encoding"] = "Accept-Encoding"
 	headersMap["Accept"] = "Accept"
-	vidFormat := Format{url: vidFormatURL, httpHeaders: headersMap, formatID: "0", fileSize: -1, Ext: "mp4", protocol: "https", hasVideo: true, hasAudio: true}
+	vidFormat := Format{url: vidFormatURL, httpHeaders: headersMap, formatID: "0", fileSize: -1, Ext: "mp4", protocol: "https", hasVideo: true, hasAudio: true, width: -1, height: -1}
 	dat, err := ioutil.ReadFile("test_files/no_formats.json")
 	if err != nil {
 		t.Error(err)
@@ -119,8 +115,44 @@ func Test_getUrls(t *testing.T) {
 		if len(vid.Formats) != 1 {
 			t.Errorf("getUrls number of formats = %v", len(vidUrls))
 		}
-		if len(vid.Formats) > 0 {
-			assert(t, "getUrls return format", vid.Formats[0], vidFormat)
+		assert(t, "getUrls return format", vid.Formats[0], vidFormat)
+	}
+}
+func Test_getUrlsFormatsOrder(t *testing.T) {
+	sChan := make(chan string)
+	url := "https://www.youtube.com/watch?v=MUMlwUe-BCo"
+	vidName := "Remember 11: The Age Of Infinity (Blind) Ep 16: Who Are You Yuni?"
+	formatsOrder := []string{"139", "140", "160", "133", "134", "135", "136", "43", "18", "22"}
+	vidIsLive := false
+	dat, err := ioutil.ReadFile("test_files/non_order_formats.json")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	go func() {
+		sChan <- string(dat)
+		close(sChan)
+	}()
+	pChan := (<-chan string)(sChan)
+	vidUrls, err, warn := getUrls(&(pChan), url)
+	if err != nil {
+		t.Errorf("getUrls error = %v", err)
+		return
+	}
+	if warn != "" {
+		t.Errorf("getUrls warning = %s", warn)
+	}
+	if len(vidUrls) != 1 {
+		t.Errorf("getUrls number of videos = %v", len(vidUrls))
+	}
+	for _, vid := range vidUrls {
+		assertString(t, "getUrls return video name", vid.Name, vidName)
+		assertBool(t, "getUrls return isLive", vid.IsLive, vidIsLive)
+		if len(formatsOrder) != len(vid.Formats) {
+			t.Errorf("getUrls number of formats = %v", len(vid.Formats))
+		}
+		for i, f := range formatsOrder {
+			assertString(t, "getUrls return format", f, vid.Formats[i].formatID)
 		}
 	}
 }

@@ -97,6 +97,7 @@ func (async *Async) Get() (interface{}, error, string) {
 	if async.wg != nil {
 		async.wg.Wait()
 		async.wg = nil
+		async.wa = nil
 	} else if async.wa != nil {
 		nErr := async.wa.Wait()
 		if async.err == nil {

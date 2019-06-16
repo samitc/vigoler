@@ -93,7 +93,7 @@ func main() {
 	flag.Var(&outputFormat, "f", "output file format")
 	flag.Parse()
 	youtube := CreateYoutubeDlWrapper()
-	ffmpeg := CreateFfmpegWrapper()
+	ffmpeg := CreateFfmpegWrapper(-1)
 	curl := CreateCurlWrapper()
 	videoUtils := VideoUtils{Youtube: &youtube, Ffmpeg: &ffmpeg, Curl: &curl}
 	numberOfCores := runtime.NumCPU()
