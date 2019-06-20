@@ -156,13 +156,14 @@ func extractDataFromMap(dMap map[string]interface{}) (string, string, bool) {
 	const ALIVE_NAME = "is_live"
 	const TITLE_NAME = "fulltitle"
 	const ID_NAME = "id"
+	const protocol="protocol"
 	var isAlive bool
 	if dMap[ALIVE_NAME] == nil {
 		isAlive = false
 	} else {
 		isAlive = dMap[ALIVE_NAME].(bool)
 	}
-	return dMap[ID_NAME].(string), dMap[TITLE_NAME].(string), isAlive
+	return dMap[ID_NAME].(string), dMap[TITLE_NAME].(string), isAlive||(dMap[protocol].(string)=="m3u8")
 }
 func getUrls(output *<-chan string, url string) ([]VideoUrl, error, string) {
 	maps, warn, err := getURLData(output, url)
