@@ -123,6 +123,9 @@ func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, ext string, maxS
 	go waitForVideoToDownload(fAsync, output)
 	return &async, nil
 }
+func (vu *VideoUtils) DownloadLiveUntilNow(url VideoUrl, format Format, outputFile string) (*Async, error) {
+	return vu.Ffmpeg.DownloadLiveUntilNow(format.url, outputFile)
+}
 func (vu *VideoUtils) downloadFormat(format Format, ext string) (*Async, error) {
 	output := vu.createFileName(ext, format)
 	dAsync, err := vu.chooseDownload(format.url, output, format.protocol, format.httpHeaders)

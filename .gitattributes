@@ -1,0 +1,2 @@
+vigoler/test_files/not_seekable filter=lfs diff=lfs merge=lfs -text
+vigoler/test_files/seekable filter=lfs diff=lfs merge=lfs -text
