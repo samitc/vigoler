@@ -27,11 +27,12 @@ type Format struct {
 	width       float64
 }
 type VideoUrl struct {
-	url     string
-	ID      string
-	Name    string
-	IsLive  bool
-	Formats []Format
+	url        string
+	ID         string
+	Name       string
+	IsLive     bool
+	Formats    []Format
+	WebPageURL string
 }
 type HttpError struct {
 	Video        string
@@ -152,25 +153,26 @@ func getURLData(output *<-chan string, url string) ([]map[string]interface{}, st
 	}
 	return mapData, warnOutput, err
 }
-func extractDataFromMap(dMap map[string]interface{}) (string, string, bool) {
+func extractDataFromMap(dMap map[string]interface{}) (string, string, string, bool) {
 	const ALIVE_NAME = "is_live"
 	const TITLE_NAME = "fulltitle"
 	const ID_NAME = "id"
-	const protocol="protocol"
+	const webPageURL = "webpage_url"
 	var isAlive bool
 	if dMap[ALIVE_NAME] == nil {
 		isAlive = false
 	} else {
 		isAlive = dMap[ALIVE_NAME].(bool)
 	}
-	return dMap[ID_NAME].(string), dMap[TITLE_NAME].(string), isAlive||(dMap[protocol].(string)=="m3u8")
+	return dMap[ID_NAME].(string), dMap[TITLE_NAME].(string), dMap[webPageURL].(string), isAlive
 }
 func getUrls(output *<-chan string, url string) ([]VideoUrl, error, string) {
 	maps, warn, err := getURLData(output, url)
 	var videos []VideoUrl
 	for _, dMap := range maps {
-		id, name, isLive := extractDataFromMap(dMap)
-		videos = append(videos, VideoUrl{url: url, ID: id, Name: name, IsLive: isLive, Formats: readFormats(dMap)})
+		id, name, webPageUrl, isLive := extractDataFromMap(dMap)
+		formats := readFormats(dMap)
+		videos = append(videos, VideoUrl{url: url, WebPageURL: webPageUrl, ID: id, Name: name, IsLive: isLive || formats[0].protocol == "m3u8", Formats: formats})
 	}
 	return videos, err, warn
 }

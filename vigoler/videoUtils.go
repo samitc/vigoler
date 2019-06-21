@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -32,27 +31,17 @@ func (e *FileTooBigError) Error() string {
 func (e *FileTooBigError) Type() string {
 	return "File too big error"
 }
-func ValidateFileName(fileName string) string {
-	notAllowCh := []string{`\`, `/`, `:`, `|`, `?`, `"`, `*`, `<`, `>`}
-	for _, ch := range notAllowCh {
-		fileName = strings.Replace(fileName, ch, "", -1)
+func (vu *VideoUtils) createFileName(ext string, format Format) string {
+	if vu.random == nil {
+		vu.random = rand.New(rand.NewSource(time.Now().UnixNano()))
 	}
-	return fileName
-}
-func addIndexToFileName(name string) string {
-	lastDot := strings.LastIndex(name, ".")
-	preLastDot := strings.LastIndex(name[:lastDot], ".")
-	if preLastDot == -1 {
-		name = name[:lastDot] + ".1" + name[lastDot:]
+	file := strconv.Itoa(vu.random.Int()) + "."
+	if ext != "" {
+		file += ext
 	} else {
-		num, err := strconv.Atoi(name[preLastDot+1 : lastDot])
-		if err != nil {
-			name = name[:lastDot] + ".1" + name[lastDot:]
-		} else {
-			name = name[:preLastDot] + "." + strconv.Itoa(num+1) + name[lastDot:]
-		}
+		file += format.Ext
 	}
-	return name
+	return file
 }
 func (vu *VideoUtils) chooseDownload(url, output, protocol string, headers map[string]string) (*Async, error) {
 	if protocol == "https" {
@@ -80,14 +69,12 @@ func (vu *VideoUtils) recreateURL(url VideoUrl, format Format) (Format, error) {
 	}
 	return Format{}, errors.New("format not found")
 }
-func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, outputFile string, maxSizeInKb, sizeSplitThreshold, maxTimeInSec, timeSplitThreshold int, liveVideoCallback LiveVideoCallback, data interface{}) (*Async, error) {
+func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, ext string, maxSizeInKb, sizeSplitThreshold, maxTimeInSec, timeSplitThreshold int, liveVideoCallback LiveVideoCallback, data interface{}) (*Async, error) {
 	var wg sync.WaitGroup
 	var wa multipleWaitAble
 	var lastErr error
 	lastWarn := ""
 	lData := data
-	outputFile += "." + format.Ext
-	var lastResult = outputFile
 	lLiveVideoCallback := liveVideoCallback
 	waitForVideoToDownload := func(fAsync *Async, output string) {
 		defer wg.Done()
@@ -98,12 +85,13 @@ func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, outputFile strin
 		}
 		lastErr, lastWarn = err, warn
 	}
-	downloadVideo := func(setting DownloadSettings, output string) {
+	downloadVideo := func(setting DownloadSettings) {
 		format, err := vu.recreateURL(url, format)
 		if err != nil {
 			lastErr, lastWarn = err, ""
 		} else {
 			var fAsync *Async
+			output := vu.createFileName(ext, format)
 			fAsync, err = vu.Ffmpeg.DownloadSplit(format.url, setting, output)
 			if err != nil {
 				lastErr, lastWarn = err, ""
@@ -115,10 +103,10 @@ func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, outputFile strin
 		}
 	}
 	splitCallback := func(url string, setting DownloadSettings, output string) {
-		output = addIndexToFileName(output)
-		downloadVideo(setting, output)
+		downloadVideo(setting)
 	}
-	fAsync, err := vu.Ffmpeg.DownloadSplit(format.url, DownloadSettings{CallbackBeforeSplit: splitCallback, MaxSizeInKb: maxSizeInKb, MaxTimeInSec: maxTimeInSec, SizeSplitThreshold: sizeSplitThreshold, TimeSplitThreshold: timeSplitThreshold}, outputFile)
+	output := vu.createFileName(ext, format)
+	fAsync, err := vu.Ffmpeg.DownloadSplit(format.url, DownloadSettings{CallbackBeforeSplit: splitCallback, MaxSizeInKb: maxSizeInKb, MaxTimeInSec: maxTimeInSec, SizeSplitThreshold: sizeSplitThreshold, TimeSplitThreshold: timeSplitThreshold}, output)
 	if err != nil {
 		return nil, err
 	}
@@ -129,14 +117,14 @@ func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, outputFile strin
 	wga.Add(1)
 	go func() {
 		wg.Wait()
-		async.SetResult(lastResult, lastErr, lastWarn)
+		async.SetResult(nil, lastErr, lastWarn)
 		wga.Done()
 	}()
-	go waitForVideoToDownload(fAsync, outputFile)
+	go waitForVideoToDownload(fAsync, output)
 	return &async, nil
 }
-func (vu *VideoUtils) downloadFormat(format Format, output string) (*Async, error) {
-	output += "." + format.Ext
+func (vu *VideoUtils) downloadFormat(format Format, ext string) (*Async, error) {
+	output := vu.createFileName(ext, format)
 	dAsync, err := vu.chooseDownload(format.url, output, format.protocol, format.httpHeaders)
 	if err != nil {
 		return nil, err
@@ -151,33 +139,20 @@ func (vu *VideoUtils) downloadFormat(format Format, output string) (*Async, erro
 	}()
 	return &async, nil
 }
-func (vu *VideoUtils) generateInt() int {
-	if vu.random == nil {
-		vu.random = rand.New(rand.NewSource(time.Now().UnixNano()))
-	}
-	return vu.random.Int()
-}
-func (vu *VideoUtils) DownloadBestAndMerge(url VideoUrl, output string, maxSizeInKb int, forceFromat string) (*Async, error) {
+func (vu *VideoUtils) DownloadBestAndMerge(url VideoUrl, maxSizeInKb int, ext string) (*Async, error) {
 	bestVideoFormats := GetFormatsOrder(url.Formats, true, false)
 	bestAudioFormats := GetFormatsOrder(url.Formats, false, true)
 	if len(bestVideoFormats) == 0 || len(bestAudioFormats) == 0 {
-		return vu.DownloadBestMaxSize(url, output, maxSizeInKb)
+		return vu.DownloadBestMaxSize(url, maxSizeInKb, ext)
 	}
-	if forceFromat != "" {
-		output += "." + forceFromat
-	} else {
-		output += "." + bestVideoFormats[0].Ext
-	}
-	videoPath := strconv.Itoa(vu.generateInt())
-	audioPath := strconv.Itoa(vu.generateInt())
 	var video, audio *Async
 	var vErr, aErr error
 	if maxSizeInKb == -1 {
-		video, vErr = vu.downloadFormat(bestVideoFormats[0], videoPath)
-		audio, aErr = vu.downloadFormat(bestAudioFormats[0], audioPath)
+		video, vErr = vu.downloadFormat(bestVideoFormats[0], ext)
+		audio, aErr = vu.downloadFormat(bestAudioFormats[0], ext)
 	} else {
-		video, vErr = vu.downloadBestMaxSize(url, videoPath, maxSizeInKb, bestVideoFormats)
-		audio, aErr = vu.downloadBestMaxSize(url, audioPath, maxSizeInKb, bestAudioFormats)
+		video, vErr = vu.downloadBestMaxSize(url, ext, maxSizeInKb, bestVideoFormats)
+		audio, aErr = vu.downloadBestMaxSize(url, ext, maxSizeInKb, bestAudioFormats)
 	}
 	if vErr != nil || aErr != nil {
 		if vErr != nil {
@@ -209,6 +184,7 @@ func (vu *VideoUtils) DownloadBestAndMerge(url VideoUrl, output string, maxSizeI
 			return
 		}
 		wa.remove(video)
+		output := vu.createFileName(ext, bestVideoFormats[0])
 		merge, err := vu.Ffmpeg.Merge(output, videoPath.(string), audioPath.(string))
 		if err != nil {
 			async.SetResult(nil, err, tWarn)
@@ -246,7 +222,7 @@ func (vu *VideoUtils) getBestFormatSize(async *Async, formats []Format, sizeInKB
 	}
 	return nil, "", nil
 }
-func (vu *VideoUtils) findBestFormat(url VideoUrl, sizeInKBytes int, formats []Format, output string) (*Async, error) {
+func (vu *VideoUtils) findBestFormat(url VideoUrl, sizeInKBytes int, formats []Format, ext string) (*Async, error) {
 	var wg sync.WaitGroup
 	async := CreateAsyncWaitGroup(&wg, nil)
 	wg.Add(1)
@@ -259,7 +235,7 @@ func (vu *VideoUtils) findBestFormat(url VideoUrl, sizeInKBytes int, formats []F
 			if format == nil {
 				async.SetResult(nil, &FileTooBigError{url: url}, warn)
 			} else {
-				output += "." + format.Ext
+				output := vu.createFileName(ext, *format)
 				as, err := vu.chooseDownload(format.url, output, format.protocol, format.httpHeaders)
 				if err != nil {
 					async.SetResult(nil, err, "")
@@ -272,41 +248,18 @@ func (vu *VideoUtils) findBestFormat(url VideoUrl, sizeInKBytes int, formats []F
 	}(&async, &wg)
 	return &async, nil
 }
-func (vu *VideoUtils) downloadBestFormats(url VideoUrl, output string, formats []Format, sizeInKBytes int) (*Async, error) {
+func (vu *VideoUtils) downloadBestFormats(url VideoUrl, ext string, formats []Format, sizeInKBytes int) (*Async, error) {
 	var async *Async
 	var err error
 	if sizeInKBytes == -1 {
-		async, err = vu.downloadFormat(formats[0], output)
+		async, err = vu.downloadFormat(formats[0], ext)
 	} else {
-		async, err = vu.findBestFormat(url, sizeInKBytes, formats, output)
+		async, err = vu.findBestFormat(url, sizeInKBytes, formats, ext)
 	}
 	return async, err
 }
-func (vu *VideoUtils) asyncRename(pAsync *Async, err error, tempOutput, output string) (*Async, error) {
-	if err != nil {
-		return nil, err
-	}
-	var wg sync.WaitGroup
-	wg.Add(1)
-	async := CreateAsyncFromAsyncAsWaitAble(&wg, pAsync)
-	go func() {
-		defer wg.Done()
-		asyncOutput, err, warn := pAsync.Get()
-		if err != nil {
-			async.SetResult(nil, err, warn)
-		} else {
-			oldOutput := asyncOutput.(string)
-			newOutput := output + oldOutput[len(tempOutput):]
-			err = os.Rename(oldOutput, newOutput)
-			async.SetResult(newOutput, err, warn)
-		}
-	}()
-	return &async, nil
-}
-func (vu *VideoUtils) DownloadBest(url VideoUrl, output string) (*Async, error) {
-	tempOutput := strconv.Itoa(vu.generateInt())
-	dAsync, err := vu.downloadBestFormats(url, tempOutput, GetFormatsOrder(url.Formats, true, true)[0:1], -1)
-	return vu.asyncRename(dAsync, err, tempOutput, output)
+func (vu *VideoUtils) DownloadBest(url VideoUrl, ext string) (*Async, error) {
+	return vu.downloadBestFormats(url, ext, GetFormatsOrder(url.Formats, true, true)[0:1], -1)
 }
 func reduceFormats(url VideoUrl, formats []Format, sizeInKBytes int) ([]Format, error) {
 	if sizeInKBytes == -1 {
@@ -337,15 +290,13 @@ func reduceFormats(url VideoUrl, formats []Format, sizeInKBytes int) ([]Format, 
 	}
 	return formats[lastKnownIndex : fIndex+1], nil
 }
-func (vu *VideoUtils) downloadBestMaxSize(url VideoUrl, output string, sizeInKBytes int, formats []Format) (*Async, error) {
+func (vu *VideoUtils) downloadBestMaxSize(url VideoUrl, ext string, sizeInKBytes int, formats []Format) (*Async, error) {
 	rFormats, err := reduceFormats(url, formats, sizeInKBytes)
 	if err != nil {
 		return nil, err
 	}
-	return vu.downloadBestFormats(url, output, rFormats, sizeInKBytes)
+	return vu.downloadBestFormats(url, ext, rFormats, sizeInKBytes)
 }
-func (vu *VideoUtils) DownloadBestMaxSize(url VideoUrl, output string, sizeInKBytes int) (*Async, error) {
-	tempOutput := strconv.Itoa(vu.generateInt())
-	async, err := vu.downloadBestMaxSize(url, tempOutput, sizeInKBytes, GetFormatsOrder(url.Formats, true, true))
-	return vu.asyncRename(async, err, tempOutput, output)
+func (vu *VideoUtils) DownloadBestMaxSize(url VideoUrl, sizeInKBytes int, ext string) (*Async, error) {
+	return vu.downloadBestMaxSize(url, ext, sizeInKBytes, GetFormatsOrder(url.Formats, true, true))
 }

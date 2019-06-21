@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -44,12 +45,16 @@ func getAsyncData(async *Async, warnPrefix string) interface{} {
 	}
 	return i
 }
-func getDefaultExtention(url VideoUrl) string {
-	return GetBestFormat(url.Formats, true, true).Ext
+func validateFileName(fileName string) string {
+	notAllowCh := []string{`\`, `/`, `:`, `|`, `?`, `"`, `*`, `<`, `>`}
+	for _, ch := range notAllowCh {
+		fileName = strings.Replace(fileName, ch, "", -1)
+	}
+	return fileName
 }
 func downloadBestAndMerge(url VideoUrl, videoUtils *VideoUtils, outputFormat string, directory string, wg *sync.WaitGroup, sem *semaphore) (*Async, string) {
-	fileName := ValidateFileName(url.Name)
-	async, err := videoUtils.DownloadBestAndMerge(url, directory+string(os.PathSeparator)+fileName, -1, outputFormat)
+	fileName := directory + string(os.PathSeparator) + validateFileName(url.Name)
+	async, err := videoUtils.DownloadBestAndMerge(url, -1, outputFormat)
 	if err != nil {
 		panic(err)
 	} else {
@@ -65,23 +70,17 @@ func liveDownload(videos <-chan outputVideo, videoUtils *VideoUtils, wg *sync.Wa
 	timeSplitThreshold := 5.4 * 60 * 60
 	var downloadAsync []*Async
 	for video := range videos {
-		var format string
-		if video.format != "" {
-			format = video.format
-		} else {
-			format = getDefaultExtention(video.video)
-		}
-		fileName := video.directory + string(os.PathSeparator) + ValidateFileName(video.video.Name) + "." + format
-		async, err := videoUtils.LiveDownload(video.video, GetBestFormat(video.video.Formats, true, true), fileName, int(maxSizeInKb), int(sizeSplitThreshold), int(maxTimeInSec), int(timeSplitThreshold), nil, nil)
+		async, err := videoUtils.LiveDownload(video.video, GetBestFormat(video.video.Formats, true, true), video.format, int(maxSizeInKb), int(sizeSplitThreshold), int(maxTimeInSec), int(timeSplitThreshold), nil, nil)
 		if err != nil {
 			fmt.Println(err)
 		} else {
 			downloadAsync = append(downloadAsync, async)
 		}
-		filesName = append(filesName, video.directory+string(os.PathSeparator)+ValidateFileName(video.video.Name)+"."+format)
+		filesName = append(filesName, video.directory+string(os.PathSeparator)+validateFileName(video.video.Name))
 	}
 	for i, s := range downloadAsync {
-		getAsyncData(s, filesName[i])
+		output := getAsyncData(s, filesName[i]).(string)
+		os.Rename(output, filesName[i]+filepath.Ext(output))
 	}
 }
 func main() {
@@ -126,7 +125,8 @@ func main() {
 		}
 	}
 	for i, a := range pendingDownloadAsync {
-		getAsyncData(a, pendingDownloadNames[i])
+		output := getAsyncData(a, pendingDownloadNames[i])
+		os.Rename(output.(string), pendingDownloadNames[i])
 	}
 	close(liveDownChan)
 	wg.Wait()
