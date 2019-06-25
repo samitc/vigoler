@@ -306,18 +306,16 @@ func (ff *FFmpegWrapper) DownloadLiveUntilNow(url string, output string) (*Async
 				if !checkIsSeekable(stringData) {
 					async.SetResult(nil, &UnsupportedSeekError{}, "")
 				} else {
-					if !wa.isStopped {
-						maxTime, err := countLength(stringData)
+					maxTime, err := countLength(stringData)
+					if err != nil {
+						async.SetResult(nil, err, "")
+					} else if !wa.isStopped {
+						wa.dAsync, err = ff.download(url, DownloadSettings{MaxTimeInSec: int(maxTime) + 60}, output, nil, "-live_start_index", "0")
 						if err != nil {
 							async.SetResult(nil, err, "")
 						} else {
-							wa.dAsync, err = ff.download(url, DownloadSettings{MaxTimeInSec: int(maxTime) + 60}, output, nil, "-live_start_index", "0")
-							if err != nil {
-								async.SetResult(nil, err, "")
-							} else {
-								_, err, warn := wa.dAsync.Get()
-								async.SetResult(nil, err, warn)
-							}
+							_, err, warn := wa.dAsync.Get()
+							async.SetResult(nil, err, warn)
 						}
 					}
 				}

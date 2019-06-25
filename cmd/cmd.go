@@ -109,7 +109,7 @@ func main() {
 		for _, url := range urls {
 			fileName := directories[i] + string(os.PathSeparator) + validateFileName(url.Name)
 			if url.IsLive {
-				//liveDownChan <- outputVideo{video: url, fileName: fileName, format: outputFormat[i]}
+				liveDownChan <- outputVideo{video: url, fileName: fileName, format: outputFormat[i]}
 				as, err := videoUtils.DownloadLiveUntilNow(url, GetBestFormat(url.Formats, true, true), outputFormat[i])
 				if err != nil {
 					panic(err)
