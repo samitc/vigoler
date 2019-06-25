@@ -5,29 +5,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 
 	. "github.com/samitc/vigoler/2/vigoler"
 )
 
-type empty struct{}
-type semaphore chan empty
 type stringArgsArray []string
 type outputVideo struct {
-	video     VideoUrl
-	directory string
-	format    string
+	video    VideoUrl
+	fileName string
+	format   string
 }
 
-func (s *semaphore) Signal() {
-	<-*s
-}
-
-func (s *semaphore) Wait() {
-	*s <- empty{}
-}
 func (dua *stringArgsArray) String() string {
 	return strings.Join(*dua, ",")
 }
@@ -35,14 +25,17 @@ func (dua *stringArgsArray) Set(value string) error {
 	*dua = append(*dua, value)
 	return nil
 }
-func getAsyncData(async *Async, warnPrefix string) interface{} {
-	i, err, warn := async.Get()
+func validateAsync(err error, warn, warnPrefix string) {
 	if err != nil {
 		panic(err)
 	}
 	if warn != "" {
 		fmt.Println(warnPrefix + ":" + warn + "\n")
 	}
+}
+func getAsyncData(async *Async, warnPrefix string) interface{} {
+	i, err, warn := async.Get()
+	validateAsync(err, warn, warnPrefix)
 	return i
 }
 func validateFileName(fileName string) string {
@@ -52,13 +45,12 @@ func validateFileName(fileName string) string {
 	}
 	return fileName
 }
-func downloadBestAndMerge(url VideoUrl, videoUtils *VideoUtils, outputFormat string, directory string, wg *sync.WaitGroup, sem *semaphore) (*Async, string) {
-	fileName := directory + string(os.PathSeparator) + validateFileName(url.Name)
+func downloadBestAndMerge(url VideoUrl, videoUtils *VideoUtils, outputFormat string) *Async {
 	async, err := videoUtils.DownloadBestAndMerge(url, -1, outputFormat)
 	if err != nil {
 		panic(err)
 	} else {
-		return async, fileName
+		return async
 	}
 }
 func liveDownload(videos <-chan outputVideo, videoUtils *VideoUtils, wg *sync.WaitGroup) {
@@ -75,8 +67,8 @@ func liveDownload(videos <-chan outputVideo, videoUtils *VideoUtils, wg *sync.Wa
 			fmt.Println(err)
 		} else {
 			downloadAsync = append(downloadAsync, async)
+			filesName = append(filesName, video.fileName)
 		}
-		filesName = append(filesName, video.directory+string(os.PathSeparator)+validateFileName(video.video.Name))
 	}
 	for i, s := range downloadAsync {
 		output := getAsyncData(s, filesName[i]).(string)
@@ -95,8 +87,6 @@ func main() {
 	ffmpeg := CreateFfmpegWrapper(-1)
 	curl := CreateCurlWrapper()
 	videoUtils := VideoUtils{Youtube: &youtube, Ffmpeg: &ffmpeg, Curl: &curl}
-	numberOfCores := runtime.NumCPU()
-	sem := make(semaphore, numberOfCores)
 	var pendingUrlAsync []*Async
 	liveDownChan := make(chan outputVideo)
 	var wg sync.WaitGroup
@@ -111,22 +101,40 @@ func main() {
 	wg.Add(1)
 	var pendingDownloadAsync []*Async
 	var pendingDownloadNames []string
+	var pendingLiveAsync []*Async
+	var pendingLiveNames []string
 	go liveDownload(liveDownChan, &videoUtils, &wg)
 	for i, a := range pendingUrlAsync {
 		urls := getAsyncData(a, downloads[i]).([]VideoUrl)
 		for _, url := range urls {
+			fileName := directories[i] + string(os.PathSeparator) + validateFileName(url.Name)
 			if url.IsLive {
-				liveDownChan <- outputVideo{video: url, directory: directories[i], format: outputFormat[i]}
+				liveDownChan <- outputVideo{video: url, fileName: fileName, format: outputFormat[i]}
+				as, err := videoUtils.DownloadLiveUntilNow(url, GetBestFormat(url.Formats, true, true), outputFormat[i])
+				if err != nil {
+					panic(err)
+				}
+				pendingLiveAsync = append(pendingLiveAsync, as)
+				pendingLiveNames = append(pendingLiveNames, fileName)
 			} else {
-				as, fn := downloadBestAndMerge(url, &videoUtils, outputFormat[i], directories[i], &wg, &sem)
+				as := downloadBestAndMerge(url, &videoUtils, outputFormat[i])
 				pendingDownloadAsync = append(pendingDownloadAsync, as)
-				pendingDownloadNames = append(pendingDownloadNames, fn)
+				pendingDownloadNames = append(pendingDownloadNames, fileName)
 			}
 		}
 	}
+	for i, a := range pendingLiveAsync {
+		output, err, warn := a.Get()
+		if err != nil {
+			if _, ok := err.(*UnsupportedSeekError); !ok {
+				validateAsync(err, warn, pendingLiveNames[i])
+			}
+		}
+		os.Rename(output.(string), pendingLiveNames[i]+filepath.Ext(output.(string)))
+	}
 	for i, a := range pendingDownloadAsync {
-		output := getAsyncData(a, pendingDownloadNames[i])
-		os.Rename(output.(string), pendingDownloadNames[i])
+		output := getAsyncData(a, pendingDownloadNames[i]).(string)
+		os.Rename(output, pendingDownloadNames[i]+filepath.Ext(output))
 	}
 	close(liveDownChan)
 	wg.Wait()

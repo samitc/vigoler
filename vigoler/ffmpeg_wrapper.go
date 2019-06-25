@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"os"
 	"runtime/debug"
 	"strconv"
@@ -29,7 +31,12 @@ type FFmpegState func(sizeInKb, timeInSeconds int)
 type ffmpegWaitAble struct {
 	*commandWaitAble
 }
+type UnsupportedSeekError struct {
+}
 
+func (*UnsupportedSeekError) Error() string {
+	return "Unsupported seek"
+}
 func (fwa *ffmpegWaitAble) Stop() error {
 	err := fwa.cmd.Process.Signal(os.Interrupt)
 	if err != nil {
@@ -46,12 +53,12 @@ func timeStringToInt(s string) int {
 func timeToSeconds(time string) int {
 	return timeStringToInt(time[6:8]) + 60*(timeStringToInt(time[3:5])+60*timeStringToInt(time[:2]))
 }
-func addFfmpegHeaders(args []string, headers *map[string]string) []string {
+func addFfmpegHeaders(args []string, headers map[string]string) []string {
 	tempArgs := make([]string, 0, 2)
 	if headers != nil {
 		tempArgs = append(tempArgs, "-headers")
 		headerArg := ""
-		for k, v := range *headers {
+		for k, v := range headers {
 			headerArg += fmt.Sprintf("%s:%s\r\n", k, v)
 		}
 		tempArgs = append(tempArgs, headerArg)
@@ -67,12 +74,8 @@ func processData(line string, sizeIndex int) (time, size int) {
 	time = timeToSeconds(splits[sizeIndex+1])
 	return
 }
-func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (WaitAble, *Async, error) {
-	// ffmpeg command template: ffmpeg -v warning -stats [args]
-	finalArgs := make([]string, 0, 3+len(args))
-	finalArgs = append(finalArgs, "-v", "warning", "-stats")
-	finalArgs = append(finalArgs, args...)
-	wa, _, oChan, err := ff.ffmpeg.runCommand(context.Background(), true, true, false, finalArgs...)
+func runFFmpeg(ffmpeg *externalApp, lineCallback func(string) bool, finishCallback func(), args ...string) (WaitAble, *Async, error) {
+	wa, _, oChan, err := ffmpeg.runCommand(context.Background(), true, true, false, args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -81,39 +84,67 @@ func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (W
 	async := CreateAsyncWaitGroup(&wg, wa)
 	go func() {
 		defer wg.Done()
-		warn := ""
 		fullS := ""
-		downloadStarted := false
-		for s := range oChan {
-			fullS, s = extractLineFromString(fullS + s)
-			if s != "" {
-				// Two different message can be here (one for video and one for audio)
-				// video - frame= 2039 fps=161 q=-1.0 Lsize=   10808kB time=00:01:07.96 bitrate=1302.7kbits/s speed=5.36x
-				// audio - size=    8553kB time=00:09:11.75 bitrate= 127.0kbits/s speed=3.37e+03x
-				isVideo := strings.HasPrefix(s, "frame=")
-				isAudio := strings.HasPrefix(s, "size=")
-				if isVideo || isAudio {
-					downloadStarted = true
-					if statsCallback != nil {
-						startIndex := 0
-						if isVideo {
-							startIndex = 4
-						}
-						timeInSec, sizeInKb := processData(s, startIndex)
-						statsCallback(sizeInKb, timeInSec)
+		var s string
+		var toContinue = true
+		for s = range oChan {
+			if toContinue {
+				fullS, s = extractLineFromString(fullS + s)
+				for s != "" {
+					toContinue = lineCallback(s)
+					if !toContinue {
+						break
 					}
-				} else {
-					warn += s
+					fullS, s = extractLineFromString(fullS)
 				}
 			}
 		}
+		for toContinue && fullS != "" {
+			fullS, s = extractLineFromString(fullS)
+			toContinue = lineCallback(s)
+		}
+		finishCallback()
+	}()
+	return &ffmpegWaitAble{wa.(*commandWaitAble)}, &async, nil
+}
+func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (WaitAble, *Async, error) {
+	warn := ""
+	downloadStarted := false
+	var async *Async
+	var wa WaitAble
+	var err error
+	// ffmpeg command template: ffmpeg -v warning -stats [args]
+	finalArgs := make([]string, 0, 3+len(args))
+	finalArgs = append(finalArgs, "-v", "warning", "-stats")
+	finalArgs = append(finalArgs, args...)
+	wa, async, err = runFFmpeg(&ff.ffmpeg, func(line string) bool {
+		// Two different message can be here (one for video and one for audio)
+		// video - frame= 2039 fps=161 q=-1.0 Lsize=   10808kB time=00:01:07.96 bitrate=1302.7kbits/s speed=5.36x
+		// audio - size=    8553kB time=00:09:11.75 bitrate= 127.0kbits/s speed=3.37e+03x
+		isVideo := strings.HasPrefix(line, "frame=")
+		isAudio := strings.HasPrefix(line, "size=")
+		if isVideo || isAudio {
+			downloadStarted = true
+			if statsCallback != nil {
+				startIndex := 0
+				if isVideo {
+					startIndex = 4
+				}
+				timeInSec, sizeInKb := processData(line, startIndex)
+				statsCallback(sizeInKb, timeInSec)
+			}
+		} else {
+			warn += line
+		}
+		return true
+	}, func() {
 		var err error
 		if !downloadStarted {
 			err = errors.New("Unknown error in ffmpeg")
 		}
 		async.SetResult(nil, err, warn)
-	}()
-	return &ffmpegWaitAble{wa.(*commandWaitAble)}, &async, nil
+	}, finalArgs...)
+	return wa, async, err
 }
 func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 	// [-i {input}] -c copy output
@@ -125,13 +156,13 @@ func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 	_, async, err := ff.runFFmpeg(nil, finalArgs...)
 	return async, err
 }
-func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output string, headers *map[string]string) (*Async, error) {
+func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output string, headers map[string]string, inputArgs ...string) (*Async, error) {
 	if len(url) == 0 {
 		return nil, &ArgumentError{stackTrack: debug.Stack(), argName: "url", argValue: url}
 	}
 	const kbToByte = 1024
 	var statsCallback FFmpegState
-	args := []string{"-i", url, "-c", "copy"}
+	args := append(inputArgs, "-i", url, "-c", "copy")
 	var ffmpegWA WaitAble
 	if setting.CallbackBeforeSplit != nil && (setting.SizeSplitThreshold > 0 || setting.TimeSplitThreshold > 0) {
 		if setting.SizeSplitThreshold <= 0 {
@@ -170,7 +201,7 @@ func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output s
 	return async, err
 }
 func (ff *FFmpegWrapper) DownloadSplitHeaders(url string, setting DownloadSettings, output string, headers map[string]string) (*Async, error) {
-	return ff.download(url, setting, output, &headers)
+	return ff.download(url, setting, output, headers)
 }
 func (ff *FFmpegWrapper) DownloadSplit(url string, setting DownloadSettings, output string) (*Async, error) {
 	return ff.download(url, setting, output, nil)
@@ -179,9 +210,9 @@ func (ff *FFmpegWrapper) Download(url, output string) (*Async, error) {
 	return ff.download(url, DownloadSettings{}, output, nil)
 }
 func (ff *FFmpegWrapper) DownloadHeaders(url string, headers map[string]string, output string) (*Async, error) {
-	return ff.download(url, DownloadSettings{}, output, &headers)
+	return ff.download(url, DownloadSettings{}, output, headers)
 }
-func (ff *FFmpegWrapper) getInputSize(url string, headers *map[string]string) (*Async, error) {
+func (ff *FFmpegWrapper) getInputSize(url string, headers map[string]string) (*Async, error) {
 	args := []string{"-v", "error", "-show_entries", "format=size", "-of", "default=noprint_wrappers=1:nokey=1", url}
 	args = addFfmpegHeaders(args, headers)
 	wa, _, oChan, err := ff.ffprobe.runCommand(context.Background(), true, true, true, args...)
@@ -208,5 +239,88 @@ func (ff *FFmpegWrapper) GetInputSize(url string) (*Async, error) {
 	return ff.getInputSize(url, nil)
 }
 func (ff *FFmpegWrapper) GetInputSizeHeaders(url string, headers map[string]string) (*Async, error) {
-	return ff.getInputSize(url, &headers)
+	return ff.getInputSize(url, headers)
+}
+
+type ffmpegLiveUntilNowWa struct {
+	isStopped bool
+	wg        *sync.WaitGroup
+	dAsync    *Async
+}
+
+func (wa *ffmpegLiveUntilNowWa) Wait() error {
+	if wa.dAsync != nil {
+		_, err, _ := wa.dAsync.Get()
+		return err
+	} else {
+		wa.wg.Wait()
+		return nil
+	}
+}
+
+func (wa *ffmpegLiveUntilNowWa) Stop() error {
+	wa.isStopped = true
+	if wa.dAsync != nil {
+		return wa.dAsync.Stop()
+	}
+	return nil
+}
+func checkIsSeekable(liveDesc string) bool {
+	const maxToNotSeekable = 100
+	n := strings.Count(liveDesc, "\n")
+	return n > maxToNotSeekable
+}
+func countLength(liveDesc string) (float64, error) {
+	l := 0.0
+	const lengthMark = "#EXTINF:"
+	for {
+		curMarkIndex := strings.Index(liveDesc, lengthMark)
+		if curMarkIndex == -1 {
+			return l, nil
+		}
+		liveDesc = liveDesc[curMarkIndex+len(lengthMark):]
+		curL, err := strconv.ParseFloat(liveDesc[:strings.Index(liveDesc, ",")], 64)
+		if err != nil {
+			return l, nil
+		}
+		l += curL
+	}
+}
+func (ff *FFmpegWrapper) DownloadLiveUntilNow(url string, output string) (*Async, error) {
+	var wg sync.WaitGroup
+	wa := ffmpegLiveUntilNowWa{wg: &wg, isStopped: false}
+	wg.Add(1)
+	async := CreateAsyncWaitGroup(&wg, &wa)
+	go func() {
+		defer wg.Done()
+		resp, err := http.DefaultClient.Get(url)
+		if err != nil {
+			async.SetResult(nil, err, "")
+		} else {
+			defer resp.Body.Close()
+			data, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				async.SetResult(nil, err, "")
+			} else {
+				stringData := string(data)
+				if !checkIsSeekable(stringData) {
+					async.SetResult(nil, &UnsupportedSeekError{}, "")
+				} else {
+					maxTime, err := countLength(stringData)
+					if err != nil {
+						async.SetResult(nil, err, "")
+					} else if !wa.isStopped {
+						wa.dAsync, err = ff.download(url, DownloadSettings{MaxTimeInSec: int(maxTime) + 60}, output, nil, "-live_start_index", "0")
+						if err != nil {
+							async.SetResult(nil, err, "")
+						} else {
+							_, err, warn := wa.dAsync.Get()
+							async.SetResult(nil, err, warn)
+						}
+					}
+				}
+			}
+		}
+	}()
+	return &async, nil
 }

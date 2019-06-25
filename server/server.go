@@ -159,6 +159,25 @@ func addIndexToFileName(name string) string {
 		return name[:lastDot+1] + strconv.Itoa(curIndex+1)
 	}
 }
+func downloadLiveUntilNow(vid *video) error {
+	async, err := videoUtils.DownloadLiveUntilNow(vid.videoURL, vigoler.GetBestFormat(vid.videoURL.Formats, true, true), "")
+	if err != nil {
+		return err
+	}
+	go func() {
+		outputI, err, _ := async.Get()
+		if err == nil {
+			output := outputI.(string)
+			ext := path.Ext(output)[1:]
+			id := createID()
+			vid.Ids = append(vid.Ids, id)
+			nVid := &video{Name: vid.Name + ".0", fileName: output, ext: ext, IsLive: false, ID: id, updateTime: time.Now(), async: async, parentID: vid.ID}
+			videosMap[id] = nVid
+			fmt.Println(nVid.StringInitData())
+		}
+	}()
+	return nil
+}
 func downloadVideoLive(w http.ResponseWriter, vid *video) {
 	if strings.ToLower(os.Getenv("VIGOLER_SUPPORT_LIVE")) != "true" {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -185,8 +204,8 @@ func downloadVideoLive(w http.ResponseWriter, vid *video) {
 					id := createID()
 					vid.Ids = append(vid.Ids, id)
 					nVid := &video{Name: name, fileName: fileName, ext: ext, IsLive: false, ID: id, updateTime: time.Now(), async: async, parentID: vid.ID}
-					fmt.Println(nVid.StringInitData())
 					videosMap[id] = nVid
+					fmt.Println(nVid.StringInitData())
 				}
 			}
 			vid.async, err = videoUtils.LiveDownload(vid.videoURL, vigoler.GetBestFormat(vid.videoURL.Formats, true, true), "", maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit, fileDownloadedCallback, vid)
@@ -194,6 +213,12 @@ func downloadVideoLive(w http.ResponseWriter, vid *video) {
 				fmt.Println(err)
 				w.WriteHeader(http.StatusInternalServerError)
 			} else {
+				if strings.ToLower(os.Getenv("VIGOLER_LIVE_FROM_START")) == "true" {
+					err = downloadLiveUntilNow(vid)
+					if err != nil {
+						fmt.Printf("Error when download live from start of id=%s, error is:%v", vid.ID, err)
+					}
+				}
 				json.NewEncoder(w).Encode(vid)
 			}
 		}
