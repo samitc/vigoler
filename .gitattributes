@@ -1,2 +1,4 @@
 vigoler/test_files/not_seekable filter=lfs diff=lfs merge=lfs -text
 vigoler/test_files/seekable filter=lfs diff=lfs merge=lfs -text
+vigoler/test_files/no_formats.json filter=lfs diff=lfs merge=lfs -text
+vigoler/test_files/non_order_formats.json filter=lfs diff=lfs merge=lfs -text
