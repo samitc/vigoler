@@ -24,13 +24,16 @@ func (cwa *commandWaitAble) Stop() error {
 	return cwa.cmd.Process.Kill()
 }
 
-func runCommand(ctx context.Context, command string, createChan, readWithDelim, callWait bool, arg ...string) (WaitAble, <-chan string, error) {
+func runCommand(ctx context.Context, command string, createChan, readWithDelim, closeReader, callWait bool, arg ...string) (WaitAble, io.ReadCloser, <-chan string, error) {
 	cmd := exec.CommandContext(ctx, command, arg...)
 	var outputChannel chan string
-	if createChan {
-		reader, writer, err := os.Pipe()
+	var reader io.ReadCloser
+	var writer io.WriteCloser
+	var err error
+	if createChan || !closeReader {
+		reader, writer, err = os.Pipe()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		defer writer.Close()
 		cmd.Stdout = writer
@@ -38,7 +41,9 @@ func runCommand(ctx context.Context, command string, createChan, readWithDelim, 
 		if createChan {
 			outputChannel = make(chan string)
 			go func(outChan chan string, reader io.ReadCloser, readWithDelim bool) {
-				defer reader.Close()
+				if closeReader {
+					defer reader.Close()
+				}
 				var err error
 				if readWithDelim {
 					rd := bufio.NewReader(reader)
@@ -68,7 +73,7 @@ func runCommand(ctx context.Context, command string, createChan, readWithDelim, 
 		}
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if callWait {
 		go func(cmd *exec.Cmd, app string, args ...string) {
@@ -79,19 +84,23 @@ func runCommand(ctx context.Context, command string, createChan, readWithDelim, 
 			}
 		}(cmd, command, arg...)
 	}
-	return &commandWaitAble{cmd: cmd}, outputChannel, nil
+	return &commandWaitAble{cmd: cmd}, reader, outputChannel, nil
 }
 
 // TODO: remove option to get reader stream
 func (external *externalApp) runCommand(ctx context.Context, createChan bool, closeReader bool, readWithDelim bool, arg ...string) (WaitAble, io.ReadCloser, <-chan string, error) {
-	waitAble, oChan, err := runCommand(ctx, external.appLocation, createChan, readWithDelim, true, arg...)
+	waitAble, _, oChan, err := runCommand(ctx, external.appLocation, createChan, readWithDelim, closeReader, true, arg...)
 	return waitAble, nil, oChan, err
 }
 func (external *externalApp) runCommandWait(ctx context.Context, arg ...string) (WaitAble, error) {
-	wait, _, err := runCommand(ctx, external.appLocation, false, true, false, arg...)
+	wait, _, _, err := runCommand(ctx, external.appLocation, false, true, true, false, arg...)
 	return wait, err
 }
 func (external *externalApp) runCommandChan(ctx context.Context, arg ...string) (WaitAble, <-chan string, error) {
 	waitAble, _, channel, err := external.runCommand(ctx, true, true, true, arg...)
 	return waitAble, channel, err
+}
+func (external *externalApp) runCommandReadWait(ctx context.Context, arg ...string) (WaitAble, io.ReadCloser, error) {
+	wait, reader, _, err := runCommand(ctx, external.appLocation, false, false, false, false, arg...)
+	return wait, reader, err
 }

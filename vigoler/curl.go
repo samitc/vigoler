@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math"
 	"os"
 	"sort"
@@ -23,6 +24,7 @@ type CurlWrapper struct {
 type downloadGo struct {
 	index int
 	err   error
+	buf   []byte
 }
 
 func CreateCurlWrapper() CurlWrapper {
@@ -53,63 +55,58 @@ func (curl *CurlWrapper) getVideoSize(url string, headers *map[string]string) (i
 	}
 	return sizeInBytes, err
 }
-func (curl *CurlWrapper) runCurl(url, output string, startByte, endByte int, headers *map[string]string) (*Async, error) {
+func (curl *CurlWrapper) runCurl(url string, output *string, startByte, endByte int, headers *map[string]string) (*Async, io.ReadCloser, error) {
 	strStartByte := strconv.Itoa(startByte)
 	strEndByte := ""
 	if endByte != -1 {
 		strEndByte = strconv.Itoa(endByte)
 	}
-	args := addCurlHeaders([]string{"-L", "-f", "--range", strStartByte + "-" + strEndByte, "-o", output}, headers)
-	args = append(args, url)
-	wa, err := curl.curl.runCommandWait(context.Background(), args...)
-	async := createAsyncWaitAble(wa)
-	return &async, err
-}
-func insertSort(a []int, num int) []int {
-	i := sort.Search(len(a), func(i int) bool { return a[i] > num })
-	return append(a[:i], append([]int{num}, a[i:]...)...)
-}
-func copyFile(input string, output *os.File) error {
-	inputFile, err := os.Open(input)
-	if err != nil {
-		return err
+	args := []string{"-L", "-s", "-f", "--range", strStartByte + "-" + strEndByte}
+	if output != nil {
+		args = append(args, "-o", *output)
 	}
-	_, err = io.Copy(output, inputFile)
-	inputFile.Close()
-	os.Remove(input)
-	return err
+	args = addCurlHeaders(args, headers)
+	args = append(args, url)
+	wa, reader, err := curl.curl.runCommandReadWait(context.Background(), args...)
+	async := createAsyncWaitAble(wa)
+	return &async, reader, err
 }
-func copyParts(a []int, curPart int, output string, outputFile *os.File) ([]int, int, error) {
+func insertSort(arr []downloadGo, add downloadGo) []downloadGo {
+	i := sort.Search(len(arr), func(i int) bool { return arr[i].index > add.index })
+	return append(arr[:i], append([]downloadGo{add}, arr[i:]...)...)
+}
+func copyParts(arr []downloadGo, curPart int, output io.Writer) ([]downloadGo, int, error) {
 	i := 0
-	l := len(a)
-	for i < l && curPart == a[i] {
-		err := copyFile(output+strconv.Itoa(a[i]), outputFile)
+	l := len(arr)
+	for i < l && curPart == arr[i].index {
+		_, err := output.Write(arr[i].buf)
 		if err != nil {
 			return nil, curPart, err
 		}
 		i++
 		curPart++
 	}
-	return a[i:], curPart, nil
+	return arr[i:], curPart, nil
 }
-func finishManagerDownload(res downloadGo, finished []int, savePartIndex int, output string, outputFile *os.File) ([]int, int, *os.File, error) {
+func finishManagerDownload(res downloadGo, finished []downloadGo, savePartIndex int, output io.Writer) ([]downloadGo, int, error) {
 	var err error
 	if res.err != nil {
-		finished = append(finished, res.index)
 		err = res.err
 	} else {
 		if res.index == 0 {
-			os.Rename(output+"0", output)
-			outputFile, err = os.OpenFile(output, os.O_APPEND|os.O_WRONLY, 0644)
+			_, err = output.Write(res.buf)
+			if err != nil {
+				return finished, savePartIndex, err
+			}
 			savePartIndex = 1
 		} else {
-			finished = insertSort(finished, res.index)
+			finished = insertSort(finished, res)
 		}
-		finished, savePartIndex, err = copyParts(finished, savePartIndex, output, outputFile)
+		finished, savePartIndex, err = copyParts(finished, savePartIndex, output)
 	}
-	return finished, savePartIndex, outputFile, err
+	return finished, savePartIndex, err
 }
-func abortCurl(workChan chan int, resChan chan downloadGo, numOfGoRot int, finished []int, output string, outputFile *os.File) error {
+func abortCurl(workChan chan int, resChan chan downloadGo, numOfGoRot int, output string, outputFile *os.File) error {
 	go func(numToSend int) {
 		for i := 0; i < numToSend; i++ {
 			workChan <- -1
@@ -124,10 +121,6 @@ func abortCurl(workChan chan int, resChan chan downloadGo, numOfGoRot int, finis
 				break
 			}
 		} else {
-			nErr := os.Remove(output + strconv.Itoa(res.index))
-			if _, ok := err.(*CancelError); ok && nErr != nil {
-				err = nErr
-			}
 			if res.err != nil {
 				err = res.err
 			}
@@ -136,12 +129,6 @@ func abortCurl(workChan chan int, resChan chan downloadGo, numOfGoRot int, finis
 	nErr := outputFile.Close()
 	if _, ok := err.(*CancelError); ok && nErr != nil {
 		err = nErr
-	}
-	for _, f := range finished {
-		nErr := os.Remove(output + strconv.Itoa(f))
-		if _, ok := err.(*CancelError); ok && nErr != nil {
-			err = nErr
-		}
 	}
 	nErr = os.Remove(output)
 	if _, ok := err.(*CancelError); ok && nErr != nil {
@@ -153,30 +140,33 @@ func downloadManagerHandle(numOfParts, numOfGoRot int, resChan chan downloadGo, 
 	curPartIndex := 0
 	savePartIndex := 0
 	var outputFile *os.File
-	finished := make([]int, 0, numOfGoRot)
-	var err error
+	finished := make([]downloadGo, 0, numOfGoRot)
+	outputFile, err := os.OpenFile(output, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
 	for curPartIndex < numOfParts {
 		select {
 		case _ = <-cancelChan:
-			err := abortCurl(workChan, resChan, numOfGoRot, finished, output, outputFile)
+			err := abortCurl(workChan, resChan, numOfGoRot, output, outputFile)
 			curPartIndex = numOfParts
 			cancelChan <- err
 			return nil, err
 		case downloadRes := <-resChan:
-			finished, savePartIndex, outputFile, err = finishManagerDownload(downloadRes, finished, savePartIndex, output, outputFile)
+			finished, savePartIndex, err = finishManagerDownload(downloadRes, finished, savePartIndex, outputFile)
 			if err != nil {
-				_ = abortCurl(workChan, resChan, numOfGoRot, finished, output, outputFile)
-				return outputFile, err
+				_ = abortCurl(workChan, resChan, numOfGoRot, output, outputFile)
+				return nil, err
 			}
 		case workChan <- curPartIndex:
 			curPartIndex++
 		}
 	}
 	for res := range resChan {
-		finished, savePartIndex, outputFile, err = finishManagerDownload(res, finished, savePartIndex, output, outputFile)
+		finished, savePartIndex, err = finishManagerDownload(res, finished, savePartIndex, outputFile)
 		if err != nil {
-			_ = abortCurl(workChan, resChan, numOfGoRot, finished, output, outputFile)
-			return outputFile, err
+			_ = abortCurl(workChan, resChan, numOfGoRot, output, outputFile)
+			return nil, err
 		}
 		if savePartIndex == curPartIndex {
 			return outputFile, nil
@@ -196,21 +186,29 @@ func (curl *CurlWrapper) downloadParts(url, output string, videoSizeInBytes int,
 					resChan <- downloadGo{index: index, err: &CancelError{}}
 					break
 				} else {
-					async, err := curl.runCurl(url, output+strconv.Itoa(index), index*minPartSizeInBytes, (index+1)*minPartSizeInBytes-1, headers)
+					async, reader, err := curl.runCurl(url, nil, index*minPartSizeInBytes, (index+1)*minPartSizeInBytes-1, headers)
+					var buf []byte
 					if err == nil {
-						_, err, _ = async.Get()
+						buf, err = ioutil.ReadAll(reader)
+						if err == nil {
+							_, err, _ = async.Get()
+						}
 					}
-					resChan <- downloadGo{index: index, err: err}
+					resChan <- downloadGo{index: index, buf: buf, err: err}
 				}
 			}
 		}()
 	}
 	outputFile, err := downloadManagerHandle(numOfParts, numOfGoRot, resChan, workChan, cancelChan, output)
-	defer outputFile.Close()
 	if err != nil {
 		return err
 	}
-	async, err := curl.runCurl(url, output+"f", numOfParts*minPartSizeInBytes, -1, headers)
+	defer outputFile.Close()
+	async, reader, err := curl.runCurl(url, nil, numOfParts*minPartSizeInBytes, -1, headers)
+	if err != nil {
+		return err
+	}
+	buf, err := ioutil.ReadAll(reader)
 	if err != nil {
 		return err
 	}
@@ -218,7 +216,7 @@ func (curl *CurlWrapper) downloadParts(url, output string, videoSizeInBytes int,
 	if err != nil {
 		return err
 	}
-	err = copyFile(output+"f", outputFile)
+	_, err = outputFile.Write(buf)
 	return err
 }
 
@@ -238,7 +236,8 @@ func (c *curlWaitAble) Stop() error {
 func (curl *CurlWrapper) downloadSize(url, output string, videoSizeInBytes int, headers *map[string]string) (*Async, error) {
 	const minPartsToDownloadParts = 3
 	if videoSizeInBytes < minPartSizeInBytes*minPartsToDownloadParts {
-		return curl.runCurl(url, output, 0, -1, headers)
+		async, _, err := curl.runCurl(url, &output, 0, -1, headers)
+		return async, err
 	}
 	cancelChan := make(chan error)
 	var wg sync.WaitGroup
