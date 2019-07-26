@@ -75,11 +75,11 @@ func insertSort(arr []downloadGo, add downloadGo) []downloadGo {
 	i := sort.Search(len(arr), func(i int) bool { return arr[i].index > add.index })
 	return append(arr[:i], append([]downloadGo{add}, arr[i:]...)...)
 }
-func copyParts(arr []downloadGo, curPart int, outputFile *os.File) ([]downloadGo, int, error) {
+func copyParts(arr []downloadGo, curPart int, output io.Writer) ([]downloadGo, int, error) {
 	i := 0
 	l := len(arr)
 	for i < l && curPart == arr[i].index {
-		_, err := outputFile.Write(arr[i].buf)
+		_, err := output.Write(arr[i].buf)
 		if err != nil {
 			return nil, curPart, err
 		}
@@ -88,13 +88,13 @@ func copyParts(arr []downloadGo, curPart int, outputFile *os.File) ([]downloadGo
 	}
 	return arr[i:], curPart, nil
 }
-func finishManagerDownload(res downloadGo, finished []downloadGo, savePartIndex int, outputFile *os.File) ([]downloadGo, int, error) {
+func finishManagerDownload(res downloadGo, finished []downloadGo, savePartIndex int, output io.Writer) ([]downloadGo, int, error) {
 	var err error
 	if res.err != nil {
 		err = res.err
 	} else {
 		if res.index == 0 {
-			_, err = outputFile.Write(res.buf)
+			_, err = output.Write(res.buf)
 			if err != nil {
 				return finished, savePartIndex, err
 			}
@@ -102,7 +102,7 @@ func finishManagerDownload(res downloadGo, finished []downloadGo, savePartIndex 
 		} else {
 			finished = insertSort(finished, res)
 		}
-		finished, savePartIndex, err = copyParts(finished, savePartIndex, outputFile)
+		finished, savePartIndex, err = copyParts(finished, savePartIndex, output)
 	}
 	return finished, savePartIndex, err
 }
@@ -156,7 +156,7 @@ func downloadManagerHandle(numOfParts, numOfGoRot int, resChan chan downloadGo, 
 			finished, savePartIndex, err = finishManagerDownload(downloadRes, finished, savePartIndex, outputFile)
 			if err != nil {
 				_ = abortCurl(workChan, resChan, numOfGoRot, output, outputFile)
-				return outputFile, err
+				return nil, err
 			}
 		case workChan <- curPartIndex:
 			curPartIndex++
@@ -166,7 +166,7 @@ func downloadManagerHandle(numOfParts, numOfGoRot int, resChan chan downloadGo, 
 		finished, savePartIndex, err = finishManagerDownload(res, finished, savePartIndex, outputFile)
 		if err != nil {
 			_ = abortCurl(workChan, resChan, numOfGoRot, output, outputFile)
-			return outputFile, err
+			return nil, err
 		}
 		if savePartIndex == curPartIndex {
 			return outputFile, nil
@@ -200,10 +200,10 @@ func (curl *CurlWrapper) downloadParts(url, output string, videoSizeInBytes int,
 		}()
 	}
 	outputFile, err := downloadManagerHandle(numOfParts, numOfGoRot, resChan, workChan, cancelChan, output)
-	defer outputFile.Close()
 	if err != nil {
 		return err
 	}
+	defer outputFile.Close()
 	async, reader, err := curl.runCurl(url, nil, numOfParts*minPartSizeInBytes, -1, headers)
 	if err != nil {
 		return err
