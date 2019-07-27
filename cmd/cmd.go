@@ -84,7 +84,7 @@ func main() {
 	flag.Var(&outputFormat, "f", "output file format")
 	flag.Parse()
 	youtube := CreateYoutubeDlWrapper()
-	ffmpeg := CreateFfmpegWrapper(-1)
+	ffmpeg := CreateFfmpegWrapper(-1, false)
 	curl := CreateCurlWrapper()
 	videoUtils := VideoUtils{Youtube: &youtube, Ffmpeg: &ffmpeg, Curl: &curl}
 	var pendingUrlAsync []*Async

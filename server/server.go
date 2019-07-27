@@ -372,7 +372,7 @@ func main() {
 			panic(err)
 		}
 	}
-	ff := vigoler.CreateFfmpegWrapper(maxLiveWithoutOutput)
+	ff := vigoler.CreateFfmpegWrapper(maxLiveWithoutOutput, os.Getenv("VIGOLER_IGNORE_HTTP_REUSE_ERRORS") == "true")
 	curl := vigoler.CreateCurlWrapper()
 	videoUtils = vigoler.VideoUtils{Youtube: &you, Ffmpeg: &ff, Curl: &curl}
 	videosMap = make(map[string]*video)

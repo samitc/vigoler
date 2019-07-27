@@ -18,6 +18,7 @@ type FFmpegWrapper struct {
 	ffmpeg                        externalApp
 	ffprobe                       externalApp
 	maxSecondsWithoutOutputToStop int
+	ignoreHttpReuseErros          bool
 }
 type DownloadCallback func(url string, setting DownloadSettings, output string)
 type DownloadSettings struct {
@@ -44,7 +45,7 @@ func (fwa *ffmpegWaitAble) Stop() error {
 	}
 	return fwa.cmd.Process.Signal(os.Interrupt)
 }
-func CreateFfmpegWrapper(maxSecondsWithoutOutputToStop int) FFmpegWrapper {
+func CreateFfmpegWrapper(maxSecondsWithoutOutputToStop int, ignoreHttpReuseErrors bool) FFmpegWrapper {
 	return FFmpegWrapper{ffmpeg: externalApp{"ffmpeg"}, ffprobe: externalApp{"ffprobe"}, maxSecondsWithoutOutputToStop: maxSecondsWithoutOutputToStop}
 }
 func timeStringToInt(s string) int {
@@ -107,6 +108,9 @@ func runFFmpeg(ffmpeg *externalApp, lineCallback func(string) bool, finishCallba
 	}()
 	return &ffmpegWaitAble{wa.(*commandWaitAble)}, &async, nil
 }
+func isLineContainsHttpReuseError(line string) bool {
+	return strings.Contains(line, "Cannot reuse HTTP connection for different host: ") || strings.Contains(line, "keepalive request failed for ")
+}
 func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (WaitAble, *Async, error) {
 	warn := ""
 	downloadStarted := false
@@ -134,7 +138,9 @@ func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (W
 				statsCallback(sizeInKb, timeInSec)
 			}
 		} else {
-			warn += line
+			if !ff.ignoreHttpReuseErros || !isLineContainsHttpReuseError(line) {
+				warn += line
+			}
 		}
 		return true
 	}, func() {
