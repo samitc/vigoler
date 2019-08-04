@@ -46,7 +46,7 @@ func (fwa *ffmpegWaitAble) Stop() error {
 	return fwa.cmd.Process.Signal(os.Interrupt)
 }
 func CreateFfmpegWrapper(maxSecondsWithoutOutputToStop int, ignoreHttpReuseErrors bool) FFmpegWrapper {
-	return FFmpegWrapper{ffmpeg: externalApp{"ffmpeg"}, ffprobe: externalApp{"ffprobe"}, maxSecondsWithoutOutputToStop: maxSecondsWithoutOutputToStop}
+	return FFmpegWrapper{ffmpeg: externalApp{"ffmpeg"}, ffprobe: externalApp{"ffprobe"}, maxSecondsWithoutOutputToStop: maxSecondsWithoutOutputToStop, ignoreHttpReuseErros: ignoreHttpReuseErrors}
 }
 func timeStringToInt(s string) int {
 	return int((s[0]-'0')*10 + s[1] - '0')
