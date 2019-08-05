@@ -61,8 +61,7 @@ func (vid *video) String() string {
 var videosMap map[string]*video
 var videoUtils vigoler.VideoUtils
 
-func serverCleaner() {
-	maxTimeDiff, _ := strconv.Atoi(os.Getenv("VIGOLER_MAX_TIME_DIFF"))
+func serverCleaner(videosMap map[string]*video, maxTimeDiff int) {
 	curTime := time.Now()
 	for k, v := range videosMap {
 		if (int)(curTime.Sub(v.updateTime).Seconds()) > maxTimeDiff {
@@ -71,8 +70,8 @@ func serverCleaner() {
 				if _, ok := err.(*vigoler.CancelError); err != nil && !ok {
 					fmt.Println(v, err)
 				}
+				logVid(v)
 			}
-			logVid(v)
 			if v.parentID != "" {
 				if val, ok := videosMap[v.parentID]; ok {
 					i := 0
@@ -381,11 +380,17 @@ func main() {
 	router.HandleFunc("/videos/{ID}", downloadVideo).Methods("POST")
 	router.HandleFunc("/videos/{ID}", checkFileDownloaded).Methods("GET")
 	router.HandleFunc("/videos/{ID}/download", download).Methods("GET")
-	go func() {
+	maxTimeDiff, err := strconv.Atoi(os.Getenv("VIGOLER_MAX_TIME_DIFF"))
+	if err != nil {
+		panic(err)
+	}
+	go func(maxTimeDiff int) {
 		for true {
-			waitAndExecute(os.Getenv("VIGOLER_CLEANER_PERIODIC"), serverCleaner)
+			waitAndExecute(os.Getenv("VIGOLER_CLEANER_PERIODIC"), func() {
+				serverCleaner(videosMap, maxTimeDiff)
+			})
 		}
-	}()
+	}(maxTimeDiff)
 	go func() {
 		for true {
 			if value, ok := os.LookupEnv("VIGOLER_YOUTUBEDL_UPDATE_PERIODIC"); ok {
