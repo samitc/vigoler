@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+const serverStopSendData = "server stop send data"
+
 type FFmpegWrapper struct {
 	ffmpeg                        externalApp
 	ffprobe                       externalApp
@@ -116,6 +118,7 @@ func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (W
 	downloadStarted := false
 	var async *Async
 	var wa WaitAble
+	var curFuncTime *time.Timer = nil
 	var err error
 	// ffmpeg command template: ffmpeg -v warning -stats [args]
 	finalArgs := make([]string, 0, 3+len(args))
@@ -129,6 +132,9 @@ func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (W
 		isAudio := strings.HasPrefix(line, "size=")
 		if isVideo || isAudio {
 			downloadStarted = true
+			if curFuncTime != nil {
+				curFuncTime.Reset(time.Duration(ff.maxSecondsWithoutOutputToStop) * time.Second)
+			}
 			if statsCallback != nil {
 				startIndex := 0
 				if isVideo {
@@ -150,6 +156,13 @@ func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (W
 		}
 		async.SetResult(nil, err, warn)
 	}, finalArgs...)
+	funcTime := func() {
+		warn += serverStopSendData
+		_ = wa.Stop()
+	}
+	if ff.maxSecondsWithoutOutputToStop != -1 {
+		curFuncTime = time.AfterFunc(time.Duration(ff.maxSecondsWithoutOutputToStop)*time.Second, funcTime)
+	}
 	return wa, async, err
 }
 func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
@@ -169,7 +182,6 @@ func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output s
 	const kbToByte = 1024
 	var statsCallback FFmpegState
 	args := append(inputArgs, "-i", url, "-c", "copy")
-	var ffmpegWA WaitAble
 	if setting.CallbackBeforeSplit != nil && (setting.SizeSplitThreshold > 0 || setting.TimeSplitThreshold > 0) {
 		if setting.SizeSplitThreshold <= 0 {
 			setting.SizeSplitThreshold = setting.MaxSizeInKb
@@ -178,17 +190,7 @@ func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output s
 			setting.TimeSplitThreshold = setting.MaxTimeInSec
 		}
 		isAlreadyCalled := false
-		funcTime := func() {
-			_ = ffmpegWA.Stop()
-		}
-		var curFuncTime *time.Timer = nil
-		if ff.maxSecondsWithoutOutputToStop != -1 {
-			curFuncTime = time.AfterFunc(time.Duration(ff.maxSecondsWithoutOutputToStop)*time.Second, funcTime)
-		}
 		statsCallback = func(sizeInKb, timeInSec int) {
-			if curFuncTime != nil {
-				curFuncTime.Reset(time.Duration(ff.maxSecondsWithoutOutputToStop) * time.Second)
-			}
 			if !isAlreadyCalled && (timeInSec > setting.TimeSplitThreshold || sizeInKb > setting.SizeSplitThreshold) {
 				go setting.CallbackBeforeSplit(url, setting, output)
 				isAlreadyCalled = true
@@ -203,7 +205,7 @@ func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output s
 	}
 	args = append(args, output)
 	args = addFfmpegHeaders(args, headers)
-	ffmpegWA, async, err := ff.runFFmpeg(statsCallback, args...)
+	_, async, err := ff.runFFmpeg(statsCallback, args...)
 	return async, err
 }
 func (ff *FFmpegWrapper) DownloadSplitHeaders(url string, setting DownloadSettings, output string, headers map[string]string) (*Async, error) {

@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path"
+	"strings"
 	"testing"
 	"time"
 )
@@ -89,9 +90,12 @@ func TestFFmpegWrapper_downloadStop(t *testing.T) {
 	time.AfterFunc(time.Duration(15)*time.Second, func() {
 		panic("Test: " + t.Name() + " timeout")
 	})
-	_, err, _ = async.Get()
+	_, err, warn := async.Get()
 	if err != nil {
 		t.Fatalf("downloadstop() error = %v",err)
+	}
+	if !strings.Contains(warn, serverStopSendData) {
+		t.Errorf("downloadstop() does not contain interupted warn message. warn = %v", warn)
 	}
 	_, err = os.Stat(outputFileName)
 	if err != nil && os.IsNotExist(err) {
