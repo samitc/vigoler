@@ -45,6 +45,7 @@ func (fwa *ffmpegWaitAble) Stop() error {
 	if err != nil {
 		return fwa.commandWaitAble.Stop()
 	}
+	time.Sleep(time.Second)
 	return fwa.cmd.Process.Signal(os.Interrupt)
 }
 func CreateFfmpegWrapper(maxSecondsWithoutOutputToStop int, ignoreHttpReuseErrors bool) FFmpegWrapper {
