@@ -15,3 +15,5 @@ matrix:
       go: master
 before_install:
 - git lfs pull
+- if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get install ffmpeg; fi
+- if [[ "$TRAVIS_OS_NAME" == "windows" ]]; then sed -i 's\TestFFmpegWrapper_downloadStop\FFmpegWrapper_downloadStop\' vigoler/ffmpeg_wrapper_test.go; fi
