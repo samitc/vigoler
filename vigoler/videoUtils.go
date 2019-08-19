@@ -155,11 +155,15 @@ func (vu *VideoUtils) downloadFormat(format Format, ext string) (*Async, error) 
 	}()
 	return &async, nil
 }
-func (vu *VideoUtils) DownloadBestAndMerge(url VideoUrl, maxSizeInKb int, ext string) (*Async, error) {
+func formatLess(a, b *Format) bool {
+	return a.width < b.width || (a.width == b.width && a.height < b.height)
+}
+func (vu *VideoUtils) DownloadBestAndMerge(url VideoUrl, maxSizeInKb int, ext string, mergeOnlyIfHigherResolution bool) (*Async, error) {
 	bestVideoFormats := GetFormatsOrder(url.Formats, true, false)
 	bestAudioFormats := GetFormatsOrder(url.Formats, false, true)
-	if len(bestVideoFormats) == 0 || len(bestAudioFormats) == 0 {
-		return vu.DownloadBestMaxSize(url, maxSizeInKb, ext)
+	bestFormats := GetFormatsOrder(url.Formats, true, true)
+	if (len(bestVideoFormats) == 0 || len(bestAudioFormats) == 0) || (mergeOnlyIfHigherResolution && formatLess(&bestVideoFormats[0], &bestFormats[0])) {
+		return vu.downloadBestMaxSize(url, maxSizeInKb, ext, bestFormats)
 	}
 	var video, audio *Async
 	var vErr, aErr error
@@ -167,8 +171,8 @@ func (vu *VideoUtils) DownloadBestAndMerge(url VideoUrl, maxSizeInKb int, ext st
 		video, vErr = vu.downloadFormat(bestVideoFormats[0], ext)
 		audio, aErr = vu.downloadFormat(bestAudioFormats[0], ext)
 	} else {
-		video, vErr = vu.downloadBestMaxSize(url, ext, maxSizeInKb, bestVideoFormats)
-		audio, aErr = vu.downloadBestMaxSize(url, ext, maxSizeInKb, bestAudioFormats)
+		video, vErr = vu.downloadBestMaxSize(url, maxSizeInKb, ext, bestVideoFormats)
+		audio, aErr = vu.downloadBestMaxSize(url, maxSizeInKb, ext, bestAudioFormats)
 	}
 	if vErr != nil || aErr != nil {
 		if vErr != nil {
@@ -306,7 +310,7 @@ func reduceFormats(url VideoUrl, formats []Format, sizeInKBytes int) ([]Format, 
 	}
 	return formats[lastKnownIndex : fIndex+1], nil
 }
-func (vu *VideoUtils) downloadBestMaxSize(url VideoUrl, ext string, sizeInKBytes int, formats []Format) (*Async, error) {
+func (vu *VideoUtils) downloadBestMaxSize(url VideoUrl, sizeInKBytes int, ext string, formats []Format) (*Async, error) {
 	rFormats, err := reduceFormats(url, formats, sizeInKBytes)
 	if err != nil {
 		return nil, err
@@ -314,5 +318,5 @@ func (vu *VideoUtils) downloadBestMaxSize(url VideoUrl, ext string, sizeInKBytes
 	return vu.downloadBestFormats(url, ext, rFormats, sizeInKBytes)
 }
 func (vu *VideoUtils) DownloadBestMaxSize(url VideoUrl, sizeInKBytes int, ext string) (*Async, error) {
-	return vu.downloadBestMaxSize(url, ext, sizeInKBytes, GetFormatsOrder(url.Formats, true, true))
+	return vu.downloadBestMaxSize(url, sizeInKBytes, ext, GetFormatsOrder(url.Formats, true, true))
 }

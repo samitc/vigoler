@@ -46,7 +46,7 @@ func validateFileName(fileName string) string {
 	return fileName
 }
 func downloadBestAndMerge(url VideoUrl, videoUtils *VideoUtils, outputFormat string) *Async {
-	async, err := videoUtils.DownloadBestAndMerge(url, -1, outputFormat)
+	async, err := videoUtils.DownloadBestAndMerge(url, -1, outputFormat, true)
 	if err != nil {
 		panic(err)
 	} else {

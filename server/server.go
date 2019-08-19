@@ -242,7 +242,7 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 				} else {
 					vid.updateTime = time.Now()
 					if strings.ToLower(os.Getenv("VIGOLER_DOWNLOAD_AND_MERGE")) == "true" {
-						vid.async, err = videoUtils.DownloadBestAndMerge(vid.videoURL, sizeInKb, os.Getenv("VIGOLER_MERGE_FORMAT"))
+						vid.async, err = videoUtils.DownloadBestAndMerge(vid.videoURL, sizeInKb, os.Getenv("VIGOLER_MERGE_FORMAT"), true)
 					} else if sizeInKb == -1 {
 						vid.async, err = videoUtils.DownloadBest(vid.videoURL, "")
 					} else {
