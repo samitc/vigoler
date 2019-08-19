@@ -3,8 +3,11 @@ package vigoler
 import (
 	"io/ioutil"
 	"math"
+	"os"
 	"path"
+	"strings"
 	"testing"
+	"time"
 )
 
 func readTestFile(fileName string) string {
@@ -59,5 +62,43 @@ func Test_countLength(t *testing.T) {
 				t.Errorf("countLength() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFFmpegWrapper_downloadStop(t *testing.T) {
+	const outputFileName = "downloadStopTest.mp4"
+	ffmpeg := CreateFfmpegWrapper(10, true)
+	wa, addr,  err := runFFmpegTestLiveVideo(23450, 10)
+	if err != nil {
+		panic(err)
+	}
+	async, err := ffmpeg.download(addr, DownloadSettings{
+		SizeSplitThreshold:  999999999,
+		TimeSplitThreshold:  999999999,
+		CallbackBeforeSplit: func(url string, setting DownloadSettings, output string) {},
+	}, outputFileName, nil)
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		_ = os.Remove(outputFileName)
+	}()
+	err = wa.Wait()
+	if err != nil {
+		panic(err)
+	}
+	time.AfterFunc(time.Duration(15)*time.Second, func() {
+		panic("Test: " + t.Name() + " timeout")
+	})
+	_, err, warn := async.Get()
+	if err != nil {
+		t.Fatalf("downloadstop() error = %v",err)
+	}
+	if !strings.Contains(warn, serverStopSendData) {
+		t.Errorf("downloadstop() does not contain interupted warn message. warn = %v", warn)
+	}
+	_, err = os.Stat(outputFileName)
+	if err != nil && os.IsNotExist(err) {
+		t.Error("downloadstop() deleted output file")
 	}
 }
