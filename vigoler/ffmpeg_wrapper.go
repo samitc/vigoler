@@ -114,17 +114,18 @@ func runFFmpeg(ffmpeg *externalApp, lineCallback func(string) bool, finishCallba
 func isLineContainsHttpReuseError(line string) bool {
 	return strings.Contains(line, "Cannot reuse HTTP connection for different host: ") || strings.Contains(line, "keepalive request failed for ")
 }
-func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (WaitAble, *Async, error) {
+func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, output string, args ...string) (WaitAble, *Async, error) {
 	warn := ""
 	downloadStarted := false
 	var async *Async
 	var wa WaitAble
 	var curFuncTime *time.Timer = nil
 	var err error
-	// ffmpeg command template: ffmpeg -v warning -stats [args]
+	// ffmpeg command template: ffmpeg -v warning -stats [args] -map_metadata 0 -c copy {output}
 	finalArgs := make([]string, 0, 3+len(args))
 	finalArgs = append(finalArgs, "-v", "warning", "-stats")
 	finalArgs = append(finalArgs, args...)
+	finalArgs = append(finalArgs, "-map_metadata", "0", "-c", "copy", output)
 	wa, async, err = runFFmpeg(&ff.ffmpeg, func(line string) bool {
 		// Two different message can be here (one for video and one for audio)
 		// video - frame= 2039 fps=161 q=-1.0 Lsize=   10808kB time=00:01:07.96 bitrate=1302.7kbits/s speed=5.36x
@@ -167,13 +168,12 @@ func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, args ...string) (W
 	return wa, async, err
 }
 func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
-	// [-i {input}] -c copy output
+	// [-i {input}]
 	finalArgs := make([]string, 0, len(input)*2+3)
 	for _, i := range input {
 		finalArgs = append(finalArgs, "-i", i)
 	}
-	finalArgs = append(finalArgs, "-c", "copy", output)
-	_, async, err := ff.runFFmpeg(nil, finalArgs...)
+	_, async, err := ff.runFFmpeg(nil, output, finalArgs...)
 	return async, err
 }
 func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output string, headers map[string]string, inputArgs ...string) (*Async, error) {
@@ -182,7 +182,7 @@ func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output s
 	}
 	const kbToByte = 1024
 	var statsCallback FFmpegState
-	args := append(inputArgs, "-i", url, "-c", "copy")
+	args := append(inputArgs, "-i", url)
 	if setting.CallbackBeforeSplit != nil && (setting.SizeSplitThreshold > 0 || setting.TimeSplitThreshold > 0) {
 		if setting.SizeSplitThreshold <= 0 {
 			setting.SizeSplitThreshold = setting.MaxSizeInKb
@@ -204,9 +204,8 @@ func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output s
 	if setting.MaxSizeInKb > 0 {
 		args = append(args, "-fs", strconv.Itoa(setting.MaxSizeInKb*kbToByte))
 	}
-	args = append(args, output)
 	args = addFfmpegHeaders(args, headers)
-	_, async, err := ff.runFFmpeg(statsCallback, args...)
+	_, async, err := ff.runFFmpeg(statsCallback, output, args...)
 	return async, err
 }
 func (ff *FFmpegWrapper) DownloadSplitHeaders(url string, setting DownloadSettings, output string, headers map[string]string) (*Async, error) {
