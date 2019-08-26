@@ -3,6 +3,7 @@ package vigoler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -122,14 +123,17 @@ func getURLData(output *<-chan string, url string) ([]map[string]interface{}, st
 	preWarnIndex := -1
 	for s := range *output {
 		hasWarn := false
-		errorIndex := str.Index(s, "ERROR")
+		hasError := str.HasPrefix(s, "ERROR")
 		warnIndex := str.Index(s, "WARNING")
-		if errorIndex != -1 || warnIndex != -1 {
+		if hasError {
+			err = errors.New(s)
+		}
+		if hasError || warnIndex != -1 {
 			hasWarn = true
 		} else {
 			j := []byte(s)
 			var data interface{}
-			json.Unmarshal(j, &data)
+			_ = json.Unmarshal(j, &data)
 			if data == nil {
 				hasWarn = true
 			} else {
