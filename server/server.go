@@ -68,10 +68,13 @@ func serverCleaner(videosMap map[string]*video, maxTimeDiff int) {
 		if (int)(curTime.Sub(v.updateTime).Seconds()) > maxTimeDiff {
 			if v.async != nil {
 				err := v.async.Stop()
-				if _, ok := err.(*vigoler.CancelError); err != nil && !ok {
-					fmt.Println(v, err)
+				if err != nil {
+					fmt.Println(v.ID, err)
 				}
-				logVid(v)
+				err = finishAsync(v)
+				if _, ok := err.(*vigoler.CancelError); err != nil && !ok {
+					fmt.Println(v.ID, err)
+				}
 			}
 			if v.parentID != "" {
 				if val, ok := videosMap[v.parentID]; ok {
@@ -312,19 +315,23 @@ func checkFileDownloaded(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+func finishAsync(vid *video) error {
+	fileName, err, _ := vid.async.Get()
+	// Get file extension and remove the '.'
+	if fileName != nil {
+		vid.fileName = fileName.(string)
+		vid.ext = path.Ext(fileName.(string))[1:]
+	}
+	logVid(vid)
+	return err
+}
 func download(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	vid := videosMap[vars["ID"]]
 	if vid == nil {
 		w.WriteHeader(http.StatusNotFound)
 	} else if !vid.async.WillBlock() && !vid.IsLive {
-		fileName, err, _ := vid.async.Get()
-		// Get file extension and remove the '.'
-		if fileName != nil {
-			vid.fileName = fileName.(string)
-			vid.ext = path.Ext(fileName.(string))[1:]
-		}
-		logVid(vid)
+		err := finishAsync(vid)
 		if err != nil {
 			fmt.Println(err)
 			w.WriteHeader(http.StatusInternalServerError)
