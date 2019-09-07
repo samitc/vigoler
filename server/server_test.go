@@ -65,7 +65,16 @@ func Test_serverCleanerVideoNotDownload(t *testing.T) {
 	}
 	assertServerCleaner(t, videosMap, 0, map[string]*video{})
 	_, err = os.Stat(fileName)
-	if err==nil {
+	if err == nil {
 		t.Errorf("serverCleaner() does not delete file when async not called.")
+	}
+}
+func Test_duplicate(t *testing.T) {
+	testMap := make(map[string]*video)
+	addVideos(testMap, []video{{ID: "1", IsLive: true, videoURL: vigoler.VideoUrl{WebPageURL: "video"}, Name: "name"}})
+	v1 := testMap["1"]
+	addVideos(testMap, []video{{ID: "2", IsLive: true, videoURL: vigoler.VideoUrl{WebPageURL: "video"}, Name: "name"}})
+	if v1 != testMap["1"] {
+		t.Errorf("video duplicate add changed video in map")
 	}
 }

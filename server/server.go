@@ -261,7 +261,7 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-func checkIfVideoExist(vid *video) *string {
+func checkIfVideoExist(videosMap map[string]*video, vid *video) *string {
 	for k, v := range videosMap {
 		if v.videoURL.WebPageURL == vid.videoURL.WebPageURL {
 			return &k
@@ -275,6 +275,21 @@ func writeErrorToClient(w http.ResponseWriter, err error) {
 		w.Write([]byte(typedError.Type()))
 	}
 }
+func addVideos(videosMap map[string]*video, videos []video) {
+	curTime := time.Now()
+	for i := 0; i < len(videos); i++ {
+		key := checkIfVideoExist(videosMap, &videos[i])
+		var vid *video
+		if key != nil {
+			vid = videosMap[*key]
+			videos[i] = *vid
+		} else {
+			vid = &videos[i]
+			videosMap[videos[i].ID] = vid
+		}
+		vid.updateTime = curTime
+	}
+}
 func process(w http.ResponseWriter, r *http.Request) {
 	youtubeURL := readBody(r)
 	videos, err := createVideos(youtubeURL)
@@ -282,15 +297,7 @@ func process(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 		writeErrorToClient(w, err)
 	} else {
-		curTime := time.Now()
-		for i := 0; i < len(videos); i++ {
-			key := checkIfVideoExist(&videos[i])
-			if key != nil {
-				videos[i] = *videosMap[*key]
-			}
-			videos[i].updateTime = curTime
-			videosMap[videos[i].ID] = &videos[i]
-		}
+		addVideos(videosMap, videos)
 	}
 	json.NewEncoder(w).Encode(videos)
 }
