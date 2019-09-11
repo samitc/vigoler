@@ -85,7 +85,19 @@ func idsToFormats(ids ...string) []Format {
 	}
 	return formats
 }
-func getUrlsTest(t *testing.T, url, vidName, inputFileName string, vidIsLive bool, formats []Format, checkOnlyIds bool, err error) {
+func formatsTest(t *testing.T, expectedFormats, formats []Format, checkOnlyIds bool) {
+	if len(expectedFormats) != len(expectedFormats) {
+		t.Fatalf("getUrls number of formats want = %v, got = %v", len(expectedFormats), len(formats))
+	}
+	for i, f := range expectedFormats {
+		if checkOnlyIds {
+			assertString(t, "getUrls return format", formats[i].formatID, f.formatID)
+		} else {
+			assert(t, "getUrls return format", formats[i], f)
+		}
+	}
+}
+func getUrlsTest(t *testing.T, url, vidName, inputFileName string, vidIsLive bool, videoAndAudioFormats []Format, videoFormats []Format, audioFormats []Format, checkOnlyIds bool, err error) {
 	data, uErr := ioutil.ReadFile(inputFileName)
 	if uErr != nil {
 		t.Fatal(uErr)
@@ -104,22 +116,15 @@ func getUrlsTest(t *testing.T, url, vidName, inputFileName string, vidIsLive boo
 	} else if warn != "" {
 		t.Errorf("getUrls warning = %s", warn)
 	}
-	if len(formats) != 0 && len(vidUrls) != 1 {
+	if (len(videoAndAudioFormats) != 0 || len(videoFormats) != 0 || len(audioFormats) != 0) && len(vidUrls) != 1 {
 		t.Errorf("getUrls number of videos = %v", len(vidUrls))
 	}
 	for _, vid := range vidUrls {
 		assertString(t, "getUrls return video name", vid.Name, vidName)
 		assertBool(t, "getUrls return isLive", vid.IsLive, vidIsLive)
-		if len(formats) != len(vid.Formats) {
-			t.Errorf("getUrls number of formats = %v", len(vid.Formats))
-		}
-		for i, f := range formats {
-			if checkOnlyIds {
-				assertString(t, "getUrls return format", f.formatID, vid.Formats[i].formatID)
-			} else {
-				assert(t, "getUrls return format", f, vid.Formats[i])
-			}
-		}
+		formatsTest(t, videoAndAudioFormats, GetFormatsOrder(vid.Formats, true, true), checkOnlyIds)
+		formatsTest(t, videoFormats, GetFormatsOrder(vid.Formats, true, false), checkOnlyIds)
+		formatsTest(t, audioFormats, GetFormatsOrder(vid.Formats, false, true), checkOnlyIds)
 	}
 }
 func Test_getUrls(t *testing.T) {
@@ -134,15 +139,17 @@ func Test_getUrls(t *testing.T) {
 	headersMap["Accept-Encoding"] = "Accept-Encoding"
 	headersMap["Accept"] = "Accept"
 	vidFormat := Format{url: vidFormatURL, httpHeaders: headersMap, formatID: "0", fileSize: -1, Ext: "mp4", protocol: "https", hasVideo: true, hasAudio: true, width: -1, height: -1}
-	getUrlsTest(t, url, vidName, "test_files/no_formats.json", false, []Format{vidFormat}, false, nil)
+	getUrlsTest(t, url, vidName, "test_files/no_formats.json", false, []Format{vidFormat}, nil, nil, false, nil)
 }
 func Test_getUrlsFormatsOrder(t *testing.T) {
 	url := "https://www.youtube.com/watch?v=MUMlwUe-BCo"
 	vidName := "Remember 11: The Age Of Infinity (Blind) Ep 16: Who Are You Yuni?"
-	formatsOrder := []string{"139", "140", "160", "133", "134", "135", "136", "43", "18", "22"}
-	getUrlsTest(t, url, vidName, "test_files/non_order_formats.json", false, idsToFormats(formatsOrder...), true, nil)
+	formatsOrder := []string{"22", "18", "43"}
+	videoOrder := []string{"136", "135", "134", "133", "160"}
+	audioOrder := []string{"140", "139"}
+	getUrlsTest(t, url, vidName, "test_files/non_order_formats.json", false, idsToFormats(formatsOrder...), idsToFormats(videoOrder...), idsToFormats(audioOrder...), true, nil)
 }
 func Test_getUrlsError(t *testing.T) {
 	url := "https://www.youtube.com/watch?v=ERROR_VIDEO"
-	getUrlsTest(t, url, "", "test_files/youtube_error_output", false, []Format{}, false, errors.New("ERROR: If the owner of this video has granted you access, please sign in."))
+	getUrlsTest(t, url, "", "test_files/youtube_error_output", false, nil, nil, nil, false, errors.New("ERROR: If the owner of this video has granted you access, please sign in."))
 }

@@ -158,11 +158,14 @@ func (vu *VideoUtils) downloadFormat(format Format, ext string) (*Async, error) 
 func formatLess(a, b *Format) bool {
 	return a.width < b.width || (a.width == b.width && a.height < b.height)
 }
+func (vu *VideoUtils) needToDownloadBestFormat(bestVideoFormats, bestAudioFormats, bestFormats []Format, mergeOnlyIfHigherResolution bool) bool {
+	return (len(bestVideoFormats) == 0 || len(bestAudioFormats) == 0) || (mergeOnlyIfHigherResolution && formatLess(&bestVideoFormats[0], &bestFormats[0]))
+}
 func (vu *VideoUtils) DownloadBestAndMerge(url VideoUrl, maxSizeInKb int, ext string, mergeOnlyIfHigherResolution bool) (*Async, error) {
 	bestVideoFormats := GetFormatsOrder(url.Formats, true, false)
 	bestAudioFormats := GetFormatsOrder(url.Formats, false, true)
 	bestFormats := GetFormatsOrder(url.Formats, true, true)
-	if (len(bestVideoFormats) == 0 || len(bestAudioFormats) == 0) || (mergeOnlyIfHigherResolution && formatLess(&bestVideoFormats[0], &bestFormats[0])) {
+	if vu.needToDownloadBestFormat(bestVideoFormats, bestAudioFormats, bestFormats, mergeOnlyIfHigherResolution) {
 		return vu.downloadBestMaxSize(url, maxSizeInKb, ext, bestFormats)
 	}
 	var video, audio *Async

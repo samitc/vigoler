@@ -47,3 +47,115 @@ func Test_reduceFormats(t *testing.T) {
 		})
 	}
 }
+
+func TestVideoUtils_needToDownloadBestFormat(t *testing.T) {
+	type args struct {
+		bestVideoFormats            []Format
+		bestAudioFormats            []Format
+		bestFormats                 []Format
+		mergeOnlyIfHigherResolution bool
+	}
+	bestFormat := []Format{{
+		height: 960,
+		width:  1080,
+	}}
+	worstFormat := []Format{{
+		height: 640,
+		width:  860,
+	}}
+	bestAudioFormats := []Format{{}}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "Best already merge with highest quality and force merge",
+			args: args{
+				bestVideoFormats:            worstFormat,
+				bestAudioFormats:            bestAudioFormats,
+				bestFormats:                 bestFormat,
+				mergeOnlyIfHigherResolution: false,
+			},
+			want: false,
+		},
+		{
+			name: "Best already merge with highest quality",
+			args: args{
+				bestVideoFormats:            worstFormat,
+				bestAudioFormats:            bestAudioFormats,
+				bestFormats:                 bestFormat,
+				mergeOnlyIfHigherResolution: true,
+			},
+			want: true,
+		},
+		{
+			name: "Best is not already merge with highest quality",
+			args: args{
+				bestVideoFormats:            bestFormat,
+				bestAudioFormats:            bestAudioFormats,
+				bestFormats:                 worstFormat,
+				mergeOnlyIfHigherResolution: true,
+			},
+			want: false,
+		},
+		{
+			name: "Best is not already merge with highest quality and force merge",
+			args: args{
+				bestVideoFormats:            bestFormat,
+				bestAudioFormats:            bestAudioFormats,
+				bestFormats:                 worstFormat,
+				mergeOnlyIfHigherResolution: false,
+			},
+			want: false,
+		},
+		{
+			name: "No audio",
+			args: args{
+				bestVideoFormats:            bestFormat,
+				bestAudioFormats:            nil,
+				bestFormats:                 worstFormat,
+				mergeOnlyIfHigherResolution: true,
+			},
+			want: true,
+		},
+		{
+			name: "No audio with force merge",
+			args: args{
+				bestVideoFormats:            bestFormat,
+				bestAudioFormats:            nil,
+				bestFormats:                 worstFormat,
+				mergeOnlyIfHigherResolution: false,
+			},
+			want: true,
+		},
+		{
+			name: "No video",
+			args: args{
+				bestVideoFormats:            nil,
+				bestAudioFormats:            bestAudioFormats,
+				bestFormats:                 worstFormat,
+				mergeOnlyIfHigherResolution: true,
+			},
+			want: true,
+		},
+		{
+			name: "No video with force merge",
+			args: args{
+				bestVideoFormats:            nil,
+				bestAudioFormats:            bestAudioFormats,
+				bestFormats:                 worstFormat,
+				mergeOnlyIfHigherResolution: false,
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vu := &VideoUtils{}
+			if got := vu.needToDownloadBestFormat(tt.args.bestVideoFormats, tt.args.bestAudioFormats, tt.args.bestFormats, tt.args.mergeOnlyIfHigherResolution); got != tt.want {
+				t.Errorf("needToDownloadBestFormat() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
