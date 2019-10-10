@@ -16,6 +16,7 @@ import (
 const (
 	maxDownloadParts   = 10
 	minPartSizeInBytes = 1 * 1024 * 1024 // 1 mb
+	maxRetryCount      = 3
 )
 
 type CurlWrapper struct {
@@ -186,12 +187,21 @@ func (curl *CurlWrapper) downloadParts(url, output string, videoSizeInBytes int,
 					resChan <- downloadGo{index: index, err: &CancelError{}}
 					break
 				} else {
-					async, reader, err := curl.runCurl(url, nil, index*minPartSizeInBytes, (index+1)*minPartSizeInBytes-1, headers)
+					var async *Async
+					var reader io.ReadCloser
+					var err error
 					var buf []byte
-					if err == nil {
-						buf, err = ioutil.ReadAll(reader)
+					for i := 0; i < maxRetryCount; i++ {
+						async, reader, err = curl.runCurl(url, nil, index*minPartSizeInBytes, (index+1)*minPartSizeInBytes-1, headers)
 						if err == nil {
-							_, err, _ = async.Get()
+							buf, err = ioutil.ReadAll(reader)
+							if err == nil {
+								_, err, _ = async.Get()
+							}
+							_ = reader.Close()
+						}
+						if err == nil {
+							break
 						}
 					}
 					resChan <- downloadGo{index: index, buf: buf, err: err}
@@ -208,6 +218,7 @@ func (curl *CurlWrapper) downloadParts(url, output string, videoSizeInBytes int,
 	if err != nil {
 		return err
 	}
+	defer reader.Close()
 	buf, err := ioutil.ReadAll(reader)
 	if err != nil {
 		return err
@@ -236,7 +247,10 @@ func (c *curlWaitAble) Stop() error {
 func (curl *CurlWrapper) downloadSize(url, output string, videoSizeInBytes int, headers *map[string]string) (*Async, error) {
 	const minPartsToDownloadParts = 3
 	if videoSizeInBytes < minPartSizeInBytes*minPartsToDownloadParts {
-		async, _, err := curl.runCurl(url, &output, 0, -1, headers)
+		async, reader, err := curl.runCurl(url, &output, 0, -1, headers)
+		if err != nil {
+			defer reader.Close()
+		}
 		return async, err
 	}
 	cancelChan := make(chan error)
