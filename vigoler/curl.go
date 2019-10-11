@@ -16,11 +16,11 @@ import (
 const (
 	maxDownloadParts   = 10
 	minPartSizeInBytes = 1 * 1024 * 1024 // 1 mb
-	maxRetryCount      = 3
 )
 
 type CurlWrapper struct {
-	curl externalApp
+	curl               externalApp
+	maxErrorRetryCount int
 }
 type downloadGo struct {
 	index int
@@ -28,8 +28,8 @@ type downloadGo struct {
 	buf   []byte
 }
 
-func CreateCurlWrapper() CurlWrapper {
-	return CurlWrapper{curl: externalApp{"curl"}}
+func CreateCurlWrapper(maxErrorRetryCount int) CurlWrapper {
+	return CurlWrapper{curl: externalApp{"curl"}, maxErrorRetryCount: maxErrorRetryCount}
 }
 func addCurlHeaders(args []string, headers *map[string]string) []string {
 	if headers != nil {
@@ -191,7 +191,7 @@ func (curl *CurlWrapper) downloadParts(url, output string, videoSizeInBytes int,
 					var reader io.ReadCloser
 					var err error
 					var buf []byte
-					for i := 0; i < maxRetryCount; i++ {
+					for i := 0; i < curl.maxErrorRetryCount; i++ {
 						async, reader, err = curl.runCurl(url, nil, index*minPartSizeInBytes, (index+1)*minPartSizeInBytes-1, headers)
 						if err == nil {
 							buf, err = ioutil.ReadAll(reader)

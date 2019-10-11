@@ -374,18 +374,25 @@ func waitAndExecute(timeEnv string, exec func()) {
 	dur := time.Second * time.Duration(seconds)
 	time.Sleep(dur)
 }
+func getDefaultNumericEnv(name string, defaultValue int) (int, error) {
+	if env, ok := os.LookupEnv(name); ok {
+		return strconv.Atoi(env)
+	} else {
+		return defaultValue, nil
+	}
+}
 func main() {
 	you := vigoler.CreateYoutubeDlWrapper()
-	maxLiveWithoutOutput := -1
-	if maxLiveWithoutOutputEnv, ok := os.LookupEnv("VIGOLER_LIVE_STOP_TIMEOUT"); ok {
-		var err error
-		maxLiveWithoutOutput, err = strconv.Atoi(maxLiveWithoutOutputEnv)
-		if err != nil {
-			panic(err)
-		}
+	maxLiveWithoutOutput, err := getDefaultNumericEnv("VIGOLER_LIVE_STOP_TIMEOUT", -1)
+	if err != nil {
+		panic(err)
+	}
+	maxCurlErrorRetryCount, err := getDefaultNumericEnv("VIGOLER_CURL_ERROR_RETRY", 1)
+	if err != nil {
+		panic(err)
 	}
 	ff := vigoler.CreateFfmpegWrapper(maxLiveWithoutOutput, os.Getenv("VIGOLER_IGNORE_HTTP_REUSE_ERRORS") == "true")
-	curl := vigoler.CreateCurlWrapper()
+	curl := vigoler.CreateCurlWrapper(maxCurlErrorRetryCount)
 	videoUtils = vigoler.VideoUtils{Youtube: &you, Ffmpeg: &ff, Curl: &curl}
 	videosMap = make(map[string]*video)
 	router := mux.NewRouter()
