@@ -59,7 +59,7 @@ func Test_finishManagerDownload(t *testing.T) {
 }
 
 func TestCurlWrapper_downloadParts(t *testing.T) {
-	curl := CreateCurlWrapper()
+	curl := CreateCurlWrapper(1)
 	timeoutFunc := func(d time.Duration, isFinish *bool, t *testing.T) {
 		<-time.After(d)
 		if !*isFinish {

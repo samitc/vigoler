@@ -85,7 +85,7 @@ func main() {
 	flag.Parse()
 	youtube := CreateYoutubeDlWrapper()
 	ffmpeg := CreateFfmpegWrapper(-1, false)
-	curl := CreateCurlWrapper()
+	curl := CreateCurlWrapper(3)
 	videoUtils := VideoUtils{Youtube: &youtube, Ffmpeg: &ffmpeg, Curl: &curl}
 	var pendingUrlAsync []*Async
 	liveDownChan := make(chan outputVideo)
