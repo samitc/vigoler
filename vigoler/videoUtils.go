@@ -166,6 +166,9 @@ func (vu *VideoUtils) DownloadBestAndMerge(url VideoUrl, maxSizeInKb int, ext st
 	bestAudioFormats := GetFormatsOrder(url.Formats, false, true)
 	bestFormats := GetFormatsOrder(url.Formats, true, true)
 	if vu.needToDownloadBestFormat(bestVideoFormats, bestAudioFormats, bestFormats, mergeOnlyIfHigherResolution) {
+		if len(bestFormats) == 0 {
+			bestFormats = bestVideoFormats
+		}
 		return vu.downloadBestMaxSize(url, maxSizeInKb, ext, bestFormats)
 	}
 	var video, audio *Async
