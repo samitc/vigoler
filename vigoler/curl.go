@@ -131,10 +131,6 @@ func abortCurl(workChan chan int, resChan chan downloadGo, numOfGoRot int, outpu
 	if _, ok := err.(*CancelError); ok && nErr != nil {
 		err = nErr
 	}
-	nErr = os.Remove(output)
-	if _, ok := err.(*CancelError); ok && nErr != nil {
-		err = nErr
-	}
 	return err
 }
 func downloadManagerHandle(numOfParts, numOfGoRot int, resChan chan downloadGo, workChan chan int, cancelChan chan error, output string) (*os.File, error) {

@@ -192,35 +192,43 @@ func (vu *VideoUtils) DownloadBestAndMerge(url VideoUrl, maxSizeInKb int, ext st
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		wasErr := false
 		tWarn := ""
 		audioPath, err, aWarn := audio.Get()
 		tWarn += aWarn
 		if err != nil {
 			async.SetResult(nil, err, tWarn)
-			return
+			wasErr = true
 		}
 		wa.remove(audio)
 		videoPath, err, vWarn := video.Get()
 		tWarn += vWarn
-		if err != nil {
+		if !wasErr && err != nil {
 			async.SetResult(nil, err, tWarn)
-			return
+			wasErr = true
 		}
 		wa.remove(video)
-		output := vu.createFileName(ext, bestVideoFormats[0])
-		merge, err := vu.Ffmpeg.Merge(output, videoPath.(string), audioPath.(string))
-		if err != nil {
-			async.SetResult(nil, err, tWarn)
-		} else {
-			wa.add(merge)
-			_, err, warn := merge.Get()
-			wa.remove(merge)
-			tWarn += warn
-			async.SetResult(output, err, tWarn)
-		}
-		if _, err := os.Stat(output); err == nil || os.IsExist(err) {
-			os.Remove(videoPath.(string))
-			os.Remove(audioPath.(string))
+		audioPathStr := audioPath.(string)
+		videoPathStr := videoPath.(string)
+		defer func() {
+			_ = os.Remove(audioPathStr)
+			_ = os.Remove(videoPathStr)
+		}()
+		if !wasErr {
+			output := vu.createFileName(ext, bestVideoFormats[0])
+			merge, err := vu.Ffmpeg.Merge(output, videoPathStr, audioPathStr)
+			if err != nil {
+				async.SetResult(nil, err, tWarn)
+			} else {
+				wa.add(merge)
+				_, err, warn := merge.Get()
+				wa.remove(merge)
+				tWarn += warn
+				if err != nil {
+					_ = os.Remove(output)
+				}
+				async.SetResult(output, err, tWarn)
+			}
 		}
 	}()
 	return &async, nil
