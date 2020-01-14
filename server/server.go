@@ -29,6 +29,9 @@ const (
 var (
 	maxTime = time.Unix(1<<63-1-unixToInternal, 999999999)
 )
+var (
+	liveFormat = os.Getenv("VIGOLER_LIVE_FORMAT")
+)
 
 type video struct {
 	ID         string   `json:"id"`
@@ -165,7 +168,7 @@ func addIndexToFileName(name string) string {
 	}
 }
 func downloadLiveUntilNow(vid *video) error {
-	async, err := videoUtils.DownloadLiveUntilNow(vid.videoURL, vigoler.GetBestFormat(vid.videoURL.Formats, true, true), "")
+	async, err := videoUtils.DownloadLiveUntilNow(vid.videoURL, vigoler.GetBestFormat(vid.videoURL.Formats, true, true), liveFormat)
 	if err != nil {
 		return err
 	}
@@ -210,7 +213,7 @@ func downloadVideoLive(w http.ResponseWriter, vid *video) {
 				fmt.Println(nVid.StringInitData())
 			}
 		}
-		vid.async, err = videoUtils.LiveDownload(vid.videoURL, vigoler.GetBestFormat(vid.videoURL.Formats, true, true), "", maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit, fileDownloadedCallback, vid)
+		vid.async, err = videoUtils.LiveDownload(vid.videoURL, vigoler.GetBestFormat(vid.videoURL.Formats, true, true), liveFormat, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit, fileDownloadedCallback, vid)
 		if err != nil {
 			fmt.Println(err)
 			w.WriteHeader(http.StatusInternalServerError)
