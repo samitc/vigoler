@@ -210,7 +210,7 @@ func downloadVideoLive(w http.ResponseWriter, vid *video) {
 				vid.Ids = append(vid.Ids, id)
 				nVid := &video{Name: name, fileName: fileName, ext: ext, IsLive: false, ID: id, updateTime: time.Now(), async: async, parentID: vid.ID}
 				videosMap[id] = nVid
-				fmt.Println(nVid.StringInitData())
+				fmt.Printf("Create new video: %s. parent id is: %s\n", nVid.StringInitData(), nVid.parentID)
 			}
 		}
 		vid.async, err = videoUtils.LiveDownload(vid.videoURL, vigoler.GetBestFormat(vid.videoURL.Formats, true, true), liveFormat, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit, fileDownloadedCallback, vid)
@@ -292,6 +292,9 @@ func addVideos(videosMap map[string]*video, videos []video) {
 		}
 		vid.updateTime = curTime
 	}
+}
+func videos(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(videosMap)
 }
 func process(w http.ResponseWriter, r *http.Request) {
 	youtubeURL := readBody(r)
@@ -399,10 +402,11 @@ func main() {
 	videoUtils = vigoler.VideoUtils{Youtube: &you, Ffmpeg: &ff, Curl: &curl}
 	videosMap = make(map[string]*video)
 	router := mux.NewRouter()
-	router.HandleFunc("/videos", process).Methods("POST")
-	router.HandleFunc("/videos/{ID}", downloadVideo).Methods("POST")
-	router.HandleFunc("/videos/{ID}", checkFileDownloaded).Methods("GET")
-	router.HandleFunc("/videos/{ID}/download", download).Methods("GET")
+	router.HandleFunc("/videos", videos).Methods(http.MethodGet)
+	router.HandleFunc("/videos", process).Methods(http.MethodPost)
+	router.HandleFunc("/videos/{ID}", checkFileDownloaded).Methods(http.MethodGet)
+	router.HandleFunc("/videos/{ID}", downloadVideo).Methods(http.MethodPost)
+	router.HandleFunc("/videos/{ID}/download", download).Methods(http.MethodGet)
 	maxTimeDiff, err := strconv.Atoi(os.Getenv("VIGOLER_MAX_TIME_DIFF"))
 	if err != nil {
 		panic(err)
