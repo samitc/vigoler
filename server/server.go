@@ -69,6 +69,7 @@ func serverCleaner(videosMap map[string]*video, maxTimeDiff int) {
 	curTime := time.Now()
 	for k, v := range videosMap {
 		if (int)(curTime.Sub(v.updateTime).Seconds()) > maxTimeDiff {
+			fmt.Println("Delete video with id:", v.ID)
 			if v.async != nil {
 				err := v.async.Stop()
 				if err != nil {
@@ -77,6 +78,10 @@ func serverCleaner(videosMap map[string]*video, maxTimeDiff int) {
 				err = finishAsync(v)
 				if _, ok := err.(*vigoler.CancelError); err != nil && !ok {
 					fmt.Println(v.ID, err)
+				}
+				err = os.Remove(v.fileName)
+				if err != nil && !os.IsNotExist(err) {
+					fmt.Println(err)
 				}
 			}
 			if v.parentID != "" {
@@ -91,10 +96,6 @@ func serverCleaner(videosMap map[string]*video, maxTimeDiff int) {
 					val.Ids[i] = val.Ids[size-1]
 					val.Ids = val.Ids[:size-1]
 				}
-			}
-			err := os.Remove(v.fileName)
-			if err != nil && !os.IsNotExist(err) {
-				fmt.Println(err)
 			}
 			delete(videosMap, k)
 		}
