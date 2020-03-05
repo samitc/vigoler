@@ -104,3 +104,7 @@ func (external *externalApp) runCommandReadWait(ctx context.Context, arg ...stri
 	wait, reader, _, err := runCommand(ctx, external.appLocation, false, false, false, false, arg...)
 	return wait, reader, err
 }
+func (external *externalApp) runCommandRead(ctx context.Context, wait bool, args ...string) (WaitAble, <-chan string, error) {
+	waitAble, _, channel, err := runCommand(ctx, external.appLocation, true, false, true, wait, args...)
+	return waitAble, channel, err
+}
