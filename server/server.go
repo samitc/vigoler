@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path"
@@ -193,9 +194,8 @@ func downloadVideoLive(w http.ResponseWriter, vid *video) {
 		fmt.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 	} else {
-		var fileDownloadedCallback vigoler.LiveVideoCallback
 		lastName := ""
-		fileDownloadedCallback = func(data interface{}, fileName string, async *vigoler.Async) {
+		fileDownloadedCallback := func(data interface{}, fileName string, async *vigoler.Async) {
 			_, err, _ = async.Get()
 			if err == nil {
 				vid := data.(*video)
@@ -400,7 +400,11 @@ func main() {
 	}
 	ff := vigoler.CreateFfmpegWrapper(maxLiveWithoutOutput, os.Getenv("VIGOLER_IGNORE_HTTP_REUSE_ERRORS") == "true")
 	curl := vigoler.CreateCurlWrapper(maxCurlErrorRetryCount)
-	videoUtils = vigoler.VideoUtils{Youtube: &you, Ffmpeg: &ff, Curl: &curl}
+	maxRetry, err := getDefaultNumericEnv("VIGOLER_LIVE_MIN_RETRY_TIME", math.MaxInt64)
+	if err != nil {
+		panic(err)
+	}
+	videoUtils = vigoler.VideoUtils{Youtube: &you, Ffmpeg: &ff, Curl: &curl, MinLiveErrorRetryingTime: maxRetry}
 	videosMap = make(map[string]*video)
 	router := mux.NewRouter()
 	router.HandleFunc("/videos", videos).Methods(http.MethodGet)

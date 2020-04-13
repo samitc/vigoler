@@ -64,11 +64,9 @@ func Test_countLength(t *testing.T) {
 		})
 	}
 }
-
-func TestFFmpegWrapper_downloadStop(t *testing.T) {
-	const outputFileName = "downloadStopTest.mp4"
+func downloadStop(t *testing.T, outputFileName string, returnWaitError bool) error {
 	ffmpeg := CreateFfmpegWrapper(10, true)
-	wa, addr,  err := runFFmpegTestLiveVideo(23450, 10)
+	wa, addr, err := runFFmpegTestLiveVideo(23450, 10)
 	if err != nil {
 		panic(err)
 	}
@@ -76,29 +74,46 @@ func TestFFmpegWrapper_downloadStop(t *testing.T) {
 		SizeSplitThreshold:  999999999,
 		TimeSplitThreshold:  999999999,
 		CallbackBeforeSplit: func(url string, setting DownloadSettings, output string) {},
+		returnWaitError:     returnWaitError,
 	}, outputFileName, nil)
+	clean := func() {
+		_ = async.Stop()
+		_ = os.Remove(outputFileName)
+	}
+	defer clean()
 	if err != nil {
 		panic(err)
 	}
-	defer func() {
-		_ = os.Remove(outputFileName)
-	}()
 	err = wa.Wait()
 	if err != nil {
 		panic(err)
 	}
-	time.AfterFunc(time.Duration(15)*time.Second, func() {
+	timer := time.AfterFunc(time.Duration(15)*time.Second, func() {
+		clean()
 		panic("Test: " + t.Name() + " timeout")
 	})
 	_, err, warn := async.Get()
-	if err != nil {
-		t.Fatalf("downloadstop() error = %v",err)
-	}
+	timer.Stop()
 	if !strings.Contains(warn, serverStopSendData) {
 		t.Errorf("downloadstop() does not contain interupted warn message. warn = %v", warn)
 	}
-	_, err = os.Stat(outputFileName)
-	if err != nil && os.IsNotExist(err) {
+	_, fileErr := os.Stat(outputFileName)
+	if fileErr != nil && os.IsNotExist(fileErr) {
 		t.Error("downloadstop() deleted output file")
+	}
+	return err
+}
+func TestFFmpegWrapper_downloadStop(t *testing.T) {
+	const outputFileName = "downloadStopTest.mp4"
+	err := downloadStop(t, outputFileName, false)
+	if err != nil {
+		t.Fatalf("downloadstop() error = %v", err)
+	}
+}
+func TestFFmpegWrapper_downloadStopErr(t *testing.T) {
+	const outputFileName = "downloadStopTest.mp4"
+	err := downloadStop(t, outputFileName, true)
+	if _, isWait := err.(*WaitError); err == nil || !isWait {
+		t.Fatalf("downloadstop() error = %v", err)
 	}
 }

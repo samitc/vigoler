@@ -29,6 +29,7 @@ type DownloadSettings struct {
 	MaxTimeInSec        int
 	TimeSplitThreshold  int
 	CallbackBeforeSplit DownloadCallback
+	returnWaitError     bool
 }
 type FFmpegState func(sizeInKb, timeInSeconds int)
 type ffmpegWaitAble struct {
@@ -39,6 +40,14 @@ type UnsupportedSeekError struct {
 
 func (*UnsupportedSeekError) Error() string {
 	return "Unsupported seek"
+}
+
+type WaitError struct {
+	err error
+}
+
+func (w *WaitError) Error() string {
+	return w.err.Error()
 }
 func (fwa *ffmpegWaitAble) Stop() error {
 	err := fwa.cmd.Process.Signal(os.Interrupt)
@@ -78,8 +87,8 @@ func processData(line string, sizeIndex int) (time, size int) {
 	time = timeToSeconds(splits[sizeIndex+1])
 	return
 }
-func runFFmpeg(ffmpeg *externalApp, lineCallback func(string) bool, finishCallback func(), args ...string) (WaitAble, *Async, error) {
-	wa, _, oChan, err := ffmpeg.runCommand(context.Background(), true, true, false, args...)
+func runFFmpeg(ffmpeg *externalApp, returnWaitError bool, lineCallback func(string) bool, finishCallback func(waitError error), args ...string) (WaitAble, *Async, error) {
+	wa, oChan, err := ffmpeg.runCommandRead(context.Background(), !returnWaitError, args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -107,14 +116,21 @@ func runFFmpeg(ffmpeg *externalApp, lineCallback func(string) bool, finishCallba
 			fullS, s = extractLineFromString(fullS)
 			toContinue = lineCallback(s)
 		}
-		finishCallback()
+		var err error
+		if returnWaitError {
+			err = wa.Wait()
+			if err != nil {
+				err = &WaitError{err: err}
+			}
+		}
+		finishCallback(err)
 	}()
 	return &ffmpegWaitAble{wa.(*commandWaitAble)}, &async, nil
 }
 func isLineContainsHttpReuseError(line string) bool {
 	return strings.Contains(line, "Cannot reuse HTTP connection for different host: ") || strings.Contains(line, "keepalive request failed for ")
 }
-func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, output string, args ...string) (WaitAble, *Async, error) {
+func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, output string, returnWaitError bool, args ...string) (WaitAble, *Async, error) {
 	warn := ""
 	downloadStarted := false
 	var async *Async
@@ -126,7 +142,7 @@ func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, output string, arg
 	finalArgs = append(finalArgs, "-v", "warning", "-stats")
 	finalArgs = append(finalArgs, args...)
 	finalArgs = append(finalArgs, "-map_metadata", "0", "-c", "copy", output)
-	wa, async, err = runFFmpeg(&ff.ffmpeg, func(line string) bool {
+	wa, async, err = runFFmpeg(&ff.ffmpeg, returnWaitError, func(line string) bool {
 		// Two different message can be here (one for video and one for audio)
 		// video - frame= 2039 fps=161 q=-1.0 Lsize=   10808kB time=00:01:07.96 bitrate=1302.7kbits/s speed=5.36x
 		// audio - size=    8553kB time=00:09:11.75 bitrate= 127.0kbits/s speed=3.37e+03x
@@ -151,8 +167,7 @@ func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, output string, arg
 			}
 		}
 		return true
-	}, func() {
-		var err error
+	}, func(err error) {
 		if !downloadStarted {
 			err = errors.New("Unknown error in ffmpeg")
 		}
@@ -173,7 +188,7 @@ func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 	for _, i := range input {
 		finalArgs = append(finalArgs, "-i", i)
 	}
-	_, async, err := ff.runFFmpeg(nil, output, finalArgs...)
+	_, async, err := ff.runFFmpeg(nil, output, false, finalArgs...)
 	return async, err
 }
 func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output string, headers map[string]string, inputArgs ...string) (*Async, error) {
@@ -205,7 +220,7 @@ func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output s
 		args = append(args, "-fs", strconv.Itoa(setting.MaxSizeInKb*kbToByte))
 	}
 	args = addFfmpegHeaders(args, headers)
-	_, async, err := ff.runFFmpeg(statsCallback, output, args...)
+	_, async, err := ff.runFFmpeg(statsCallback, output, setting.returnWaitError, args...)
 	return async, err
 }
 func (ff *FFmpegWrapper) DownloadSplitHeaders(url string, setting DownloadSettings, output string, headers map[string]string) (*Async, error) {
