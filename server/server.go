@@ -267,7 +267,7 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 }
 func checkIfVideoExist(videosMap map[string]*video, vid *video) *string {
 	for k, v := range videosMap {
-		if v.videoURL.WebPageURL == vid.videoURL.WebPageURL {
+		if v.videoURL.WebPageURL == vid.videoURL.WebPageURL && v.IsLive == vid.IsLive {
 			return &k
 		}
 	}
