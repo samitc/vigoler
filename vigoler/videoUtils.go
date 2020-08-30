@@ -79,7 +79,6 @@ func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, ext string, maxS
 	lLiveVideoCallback := liveVideoCallback
 	var downloadVideo func(errorsCount time.Time, setting DownloadSettings)
 	waitForVideoToDownload := func(fAsync *Async, output string, errorTime time.Time, setting DownloadSettings) {
-		defer wg.Done()
 		_, err, warn := fAsync.Get()
 		wa.remove(fAsync)
 		_, isWaitError := err.(*WaitError)
@@ -101,6 +100,8 @@ func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, ext string, maxS
 		lastErr, lastWarn = err, warn
 	}
 	downloadVideo = func(errorTime time.Time, setting DownloadSettings) {
+		wg.Add(1)
+		defer wg.Done()
 		format, err := vu.recreateURL(url, format)
 		if err != nil {
 			lastErr, lastWarn = err, ""
@@ -111,7 +112,6 @@ func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, ext string, maxS
 			if err != nil {
 				lastErr, lastWarn = err, ""
 			} else {
-				wg.Add(1)
 				wa.add(fAsync)
 				waitForVideoToDownload(fAsync, output, errorTime, setting)
 			}
@@ -128,15 +128,14 @@ func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, ext string, maxS
 	}
 	var wga sync.WaitGroup
 	async := CreateAsyncWaitGroup(&wga, &wa)
-	wg.Add(1)
 	wa.add(fAsync)
 	wga.Add(1)
 	go func() {
+		waitForVideoToDownload(fAsync, output, time.Time{}, setting)
 		wg.Wait()
 		async.SetResult(nil, lastErr, lastWarn)
 		wga.Done()
 	}()
-	go waitForVideoToDownload(fAsync, output, time.Time{}, setting)
 	return &async, nil
 }
 func (vu *VideoUtils) DownloadLiveUntilNow(url VideoUrl, format Format, ext string) (*Async, error) {
