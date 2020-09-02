@@ -54,11 +54,9 @@ func CreateYoutubeDlWrapper() YoutubeDlWrapper {
 	wrapper := YoutubeDlWrapper{app: externalApp{appLocation: "youtube-dl"}}
 	return wrapper
 }
-func (you *YoutubeDlWrapper) UpdateYoutubeDl() {
+func (you *YoutubeDlWrapper) UpdateYoutubeDl() error {
 	_, _, _, err := you.app.runCommand(context.Background(), false, true, true, "-U")
-	if err != nil {
-		fmt.Println(err)
-	}
+	return err
 }
 func createURL(urlStr string) string {
 	newURL, _ := url.Parse(urlStr)

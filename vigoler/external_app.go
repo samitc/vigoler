@@ -79,8 +79,7 @@ func runCommand(ctx context.Context, command string, createChan, readWithDelim, 
 		go func(cmd *exec.Cmd, app string, args ...string) {
 			err := cmd.Wait()
 			if err != nil {
-				fmt.Println("error in app:" + app + " with args:" + strings.Join(args, ","))
-				fmt.Println(err)
+				fmt.Printf("Error in app %s app with args: %s and errro: %v.\n", app, strings.Join(args, ","), err)
 			}
 		}(cmd, command, arg...)
 	}

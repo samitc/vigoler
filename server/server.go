@@ -3,9 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
+	"go.uber.org/zap"
 	"io"
-	"log"
 	"math"
 	"net/http"
 	"os"
@@ -48,41 +47,36 @@ type video struct {
 	fileName   string
 }
 
-func (vid *video) StringInitData() string {
-	return fmt.Sprintf("id=%s, name=%s, url=%v", vid.ID, vid.Name, vid.videoURL)
-}
-func (vid *video) StringData() string {
-	_, err, warn := vid.async.Get()
-	return fmt.Sprintf("id=%s, ext=%s, update time=%v, error=%v, warn=%s", vid.ID, vid.ext, vid.updateTime, err, warn)
-}
-
-func (vid *video) String() string {
-	_, err, warn := vid.async.Get()
-	return fmt.Sprintf("id=%s, name=%s, ext=%s, file name=%s, url=%v, update time=%v, error=%v, warn=%s",
-		vid.ID, vid.Name, vid.ext, vid.fileName, vid.videoURL, vid.updateTime, err, warn)
-}
-
 var videosMap map[string]*video
 var videoUtils vigoler.VideoUtils
 var supportLive = strings.ToLower(os.Getenv("VIGOLER_SUPPORT_LIVE")) == "true"
+var log = createLogger()
+
+func createLogger() logger {
+	l, err := zap.NewProduction(zap.WithCaller(false))
+	if err != nil {
+		panic(err)
+	}
+	return logger{logger: l}
+}
 
 func serverCleaner(videosMap map[string]*video, maxTimeDiff int) {
 	curTime := time.Now()
 	for k, v := range videosMap {
 		if (int)(curTime.Sub(v.updateTime).Seconds()) > maxTimeDiff {
-			fmt.Println("Delete video with id:", v.ID)
+			log.deleteVideo(v)
 			if v.async != nil {
 				err := v.async.Stop()
 				if err != nil {
-					fmt.Println(v.ID, err)
+					log.deleteVideoError(v, err)
 				}
 				err = finishAsync(v)
 				if _, ok := err.(*vigoler.CancelError); err != nil && !ok {
-					fmt.Println(v.ID, err)
+					log.deleteVideoError(v, err)
 				}
 				err = os.Remove(v.fileName)
 				if err != nil && !os.IsNotExist(err) {
-					fmt.Println(err)
+					log.deleteVideoError(v, err)
 				}
 			}
 			if v.parentID != "" {
@@ -115,7 +109,7 @@ func readBody(r *http.Request) string {
 }
 func logVid(vid *video) {
 	if !vid.isLogged {
-		fmt.Println(vid.StringData())
+		log.logVideoFinish(vid)
 		vid.isLogged = true
 	}
 }
@@ -126,7 +120,7 @@ func createVideos(url string) ([]video, error) {
 	}
 	urls, err, warn := async.Get()
 	if warn != "" {
-		fmt.Println(warn)
+		log.warnInVideoCreate(url, warn)
 	}
 	if err != nil {
 		return nil, err
@@ -135,7 +129,6 @@ func createVideos(url string) ([]video, error) {
 	for _, url := range urls.([]vigoler.VideoUrl) {
 		if supportLive || !url.IsLive {
 			vid := video{videoURL: url, ID: createID(), Name: url.Name, IsLive: url.IsLive, isLogged: false}
-			fmt.Println(vid.StringInitData())
 			videos = append(videos, vid)
 		}
 	}
@@ -183,7 +176,7 @@ func downloadLiveUntilNow(vid *video) error {
 			vid.Ids = append(vid.Ids, id)
 			nVid := &video{Name: vid.Name + ".0", fileName: output, ext: ext, IsLive: false, ID: id, updateTime: time.Now(), async: async, parentID: vid.ID}
 			videosMap[id] = nVid
-			fmt.Println(nVid.StringInitData())
+			log.newVideo(nVid)
 		}
 	}()
 	return nil
@@ -191,8 +184,7 @@ func downloadLiveUntilNow(vid *video) error {
 func downloadVideoLive(w http.ResponseWriter, vid *video) {
 	maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit, err := extractLiveParameter()
 	if err != nil {
-		fmt.Println(err)
-		w.WriteHeader(http.StatusInternalServerError)
+		panic(err)
 	} else {
 		lastName := ""
 		fileDownloadedCallback := func(data interface{}, fileName string, async *vigoler.Async) {
@@ -211,18 +203,18 @@ func downloadVideoLive(w http.ResponseWriter, vid *video) {
 				vid.Ids = append(vid.Ids, id)
 				nVid := &video{Name: name, fileName: fileName, ext: ext, IsLive: false, ID: id, updateTime: time.Now(), async: async, parentID: vid.ID}
 				videosMap[id] = nVid
-				fmt.Printf("Create new video: %s. parent id is: %s\n", nVid.StringInitData(), nVid.parentID)
+				log.newVideo(nVid)
 			}
 		}
 		vid.async, err = videoUtils.LiveDownload(vid.videoURL, vigoler.GetBestFormat(vid.videoURL.Formats, true, true), liveFormat, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit, fileDownloadedCallback, vid)
 		if err != nil {
-			fmt.Println(err)
+			log.downloadVideoError(vid, "live", err)
 			w.WriteHeader(http.StatusInternalServerError)
 		} else {
 			if strings.ToLower(os.Getenv("VIGOLER_LIVE_FROM_START")) == "true" {
 				err = downloadLiveUntilNow(vid)
 				if err != nil {
-					fmt.Printf("Error when download live from start of id=%s, error is:%v", vid.ID, err)
+					log.downloadVideoError(vid, "live from start", err)
 				}
 			}
 			json.NewEncoder(w).Encode(vid)
@@ -243,8 +235,7 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 			} else {
 				sizeInKb, err := validateInt(os.Getenv("VIGOLER_MAX_FILE_SIZE"))
 				if err != nil {
-					fmt.Println(err)
-					w.WriteHeader(http.StatusInternalServerError)
+					panic(err)
 				} else {
 					vid.updateTime = time.Now()
 					if strings.ToLower(os.Getenv("VIGOLER_DOWNLOAD_AND_MERGE")) == "true" {
@@ -255,13 +246,14 @@ func downloadVideo(w http.ResponseWriter, r *http.Request) {
 						vid.async, err = videoUtils.DownloadBestMaxSize(vid.videoURL, sizeInKb, "")
 					}
 					if err != nil {
-						fmt.Println(err)
+						log.downloadVideoError(vid, "download", err)
 						writeErrorToClient(w, err)
 					} else {
 						json.NewEncoder(w).Encode(vid)
 					}
 				}
 			}
+			log.startDownloadVideo(vid)
 		}
 	}
 }
@@ -289,6 +281,7 @@ func addVideos(videosMap map[string]*video, videos []video) {
 			videos[i] = *vid
 		} else {
 			vid = &videos[i]
+			log.newVideo(vid)
 			videosMap[videos[i].ID] = vid
 		}
 		vid.updateTime = curTime
@@ -301,7 +294,7 @@ func process(w http.ResponseWriter, r *http.Request) {
 	youtubeURL := readBody(r)
 	videos, err := createVideos(youtubeURL)
 	if err != nil {
-		fmt.Println(err)
+		log.errorInVideoCreate(youtubeURL, err)
 		writeErrorToClient(w, err)
 	} else {
 		addVideos(videosMap, videos)
@@ -319,8 +312,7 @@ func checkFileDownloaded(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusAccepted)
 			json.NewEncoder(w).Encode(vid)
 		} else {
-			_, err, _ := vid.async.Get()
-			logVid(vid)
+			err := finishAsync(vid)
 			if err != nil {
 				writeErrorToClient(w, err)
 			} else {
@@ -347,14 +339,14 @@ func download(w http.ResponseWriter, r *http.Request) {
 	} else if !vid.async.WillBlock() && !vid.IsLive {
 		err := finishAsync(vid)
 		if err != nil {
-			fmt.Println(err)
+			log.videoAsyncError(vid, err)
 			w.WriteHeader(http.StatusInternalServerError)
 		} else {
 			fileName := vid.Name + "." + vid.ext
 			file, err := os.Open(vid.fileName)
 			defer file.Close()
 			if err != nil {
-				fmt.Println(err)
+				log.errorOpenVideoOutputFile(vid, fileName, err)
 				w.WriteHeader(http.StatusInternalServerError)
 			} else {
 				defer func() { vid.updateTime = time.Now() }()
@@ -362,7 +354,7 @@ func download(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Disposition", "attachment; filename=\""+fileName+"\"")
 				fs, err := file.Stat()
 				if err != nil {
-					fmt.Println(err)
+					log.errorOpenVideoOutputFile(vid, fileName, err)
 				} else {
 					w.Header().Set("Content-Length", strconv.FormatInt(fs.Size(), 10))
 				}
@@ -375,8 +367,11 @@ func download(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(vid)
 	}
 }
-func waitAndExecute(timeEnv string, exec func()) {
-	exec()
+func waitAndExecute(timeEnv string, exec func() error) {
+	err := exec()
+	if err != nil {
+		log.logError("Error on wait and execute", err)
+	}
 	seconds, _ := strconv.Atoi(timeEnv)
 	dur := time.Second * time.Duration(seconds)
 	time.Sleep(dur)
@@ -418,8 +413,9 @@ func main() {
 	}
 	go func(maxTimeDiff int) {
 		for true {
-			waitAndExecute(os.Getenv("VIGOLER_CLEANER_PERIODIC"), func() {
+			waitAndExecute(os.Getenv("VIGOLER_CLEANER_PERIODIC"), func() error {
 				serverCleaner(videosMap, maxTimeDiff)
+				return nil
 			})
 		}
 	}(maxTimeDiff)
@@ -438,20 +434,11 @@ func main() {
 	addr := os.Getenv("VIGOLER_LISTEN_ADDR")
 	muxHandlers := handlers.CORS(corsObj)(router)
 	isTLS := len(certFile) != 0 && len(keyFile) != 0
-	logName := os.Getenv("VIGOLER_LOG_NAME")
-	var logFile *log.Logger
-	if logName != "" {
-		file, err := os.OpenFile(logName, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-		if err != nil {
-			panic(err)
-		}
-		defer file.Close()
-		logFile = log.New(file, "", 0)
-	}
-	server := &http.Server{Addr: addr, Handler: muxHandlers, ErrorLog: logFile}
+	httpLog := zap.NewStdLog(log.logger)
+	server := &http.Server{Addr: addr, Handler: muxHandlers, ErrorLog: httpLog}
 	if isTLS {
-		log.Fatal(server.ListenAndServeTLS(certFile, keyFile))
+		panic(server.ListenAndServeTLS(certFile, keyFile))
 	} else {
-		log.Fatal(server.ListenAndServe())
+		panic(server.ListenAndServe())
 	}
 }
