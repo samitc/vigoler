@@ -45,16 +45,16 @@ func (l *logger) startDownloadVideo(vid *video) {
 func (v *video) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddString("ID", v.ID)
 	enc.AddString("name", v.Name)
-	enc.AddBool("is live", v.IsLive)
+	enc.AddBool("is_live", v.IsLive)
 	err := enc.AddArray("ids", stringArray(v.Ids))
 	if err != nil {
 		return err
 	}
-	enc.AddString("parent id", v.parentID)
-	enc.AddString("file name", v.fileName)
+	enc.AddString("parent_id", v.parentID)
+	enc.AddString("file_name", v.fileName)
 	enc.AddString("extension", v.ext)
-	enc.AddTime("update time", v.updateTime)
-	return enc.AddReflected("video url", v.videoURL)
+	enc.AddTime("update_time", v.updateTime)
+	return enc.AddReflected("video_url", v.videoURL)
 }
 
 type stringArray []string
