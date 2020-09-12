@@ -399,7 +399,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	videoUtils = vigoler.VideoUtils{Youtube: &you, Ffmpeg: &ff, Curl: &curl, MinLiveErrorRetryingTime: maxRetry}
+	videoUtils = vigoler.VideoUtils{Youtube: &you, Ffmpeg: &ff, Curl: &curl, MinLiveErrorRetryingTime: maxRetry, Log: &vigoler.Logger{Logger: log.logger}}
 	videosMap = make(map[string]*video)
 	router := mux.NewRouter()
 	router.HandleFunc("/videos", videos).Methods(http.MethodGet)
