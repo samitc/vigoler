@@ -107,9 +107,9 @@ func readBody(r *http.Request) string {
 	buf.ReadFrom(r.Body)
 	return buf.String()
 }
-func logVid(vid *video) {
+func logVid(vid *video, warn string, err error) {
 	if !vid.isLogged {
-		log.logVideoFinish(vid)
+		log.logVideoFinish(vid, warn, err)
 		vid.isLogged = true
 	}
 }
@@ -322,13 +322,13 @@ func checkFileDownloaded(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func finishAsync(vid *video) error {
-	fileName, err, _ := vid.async.Get()
+	fileName, err, warn := vid.async.Get()
 	// Get file extension and remove the '.'
 	if fileName != nil {
 		vid.fileName = fileName.(string)
 		vid.ext = path.Ext(fileName.(string))[1:]
 	}
-	logVid(vid)
+	logVid(vid, warn, err)
 	return err
 }
 func download(w http.ResponseWriter, r *http.Request) {

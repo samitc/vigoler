@@ -18,8 +18,15 @@ func (l *logger) deleteVideo(vid *video) {
 func (l *logger) deleteVideoError(vid *video, err error) {
 	l.logger.Error("Error on delete video", zap.Any("video", vid), zap.Error(err))
 }
-func (l *logger) logVideoFinish(vid *video) {
-	l.logger.Info("Video finish to download", zap.Any("video", vid))
+func (l *logger) logVideoFinish(vid *video, warn string, err error) {
+	const message = "Video finish to download"
+	video := zap.Any("video", vid)
+	warnF := zap.String("warn", warn)
+	if err == nil {
+		l.logger.Info(message, video, warnF)
+	} else {
+		l.logger.Error(message, video, warnF, zap.Error(err))
+	}
 }
 func (l *logger) newVideo(vid *video) {
 	l.logger.Info("New video created", zap.Any("video", vid))
