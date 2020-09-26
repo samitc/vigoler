@@ -81,11 +81,11 @@ func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, ext string, maxS
 	var downloadVideo func(errorsCount time.Time, setting DownloadSettings)
 	waitForVideoToDownload := func(fAsync *Async, output string, errorTime time.Time, setting DownloadSettings) {
 		vu.Log.startDownloadLive(url, output)
-		defer func() { vu.Log.finishDownloadLive(url, output) }()
 		_, err, warn := fAsync.Get()
 		wa.remove(fAsync)
 		_, isWaitError := err.(*WaitError)
 		if isWaitError {
+			vu.Log.finishDownloadLive(url, output, warn, err)
 			err = nil
 			now := time.Now()
 			if int(now.Sub(errorTime).Seconds()) > vu.MinLiveErrorRetryingTime {
@@ -96,25 +96,34 @@ func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, ext string, maxS
 				downloadVideo(now, setting)
 			}
 		} else {
+			vu.Log.finishDownloadLiveError(url, output, warn, err)
 			if lLiveVideoCallback != nil {
 				lLiveVideoCallback(lData, output, fAsync)
 			}
 		}
-		lastErr, lastWarn = err, warn
+		if lastErr == nil {
+			lastErr, lastWarn = err, warn
+		}
 	}
 	downloadVideo = func(errorTime time.Time, setting DownloadSettings) {
 		wg.Add(1)
 		defer wg.Done()
 		format, err := vu.recreateURL(url, format)
 		if err != nil {
-			lastErr, lastWarn = err, ""
+			vu.Log.liveRecreatedError(url, err)
+			if lastErr == nil {
+				lastErr, lastWarn = err, ""
+			}
 		} else {
 			output := vu.createFileName(ext, format)
-			vu.Log.liveRecreated(url,output)
+			vu.Log.liveRecreated(url, output)
 			var fAsync *Async
 			fAsync, err = vu.Ffmpeg.DownloadSplit(format.url, setting, output)
 			if err != nil {
-				lastErr, lastWarn = err, ""
+				vu.Log.liveDownloadError(url, output, err)
+				if lastErr == nil {
+					lastErr, lastWarn = err, ""
+				}
 			} else {
 				wa.add(fAsync)
 				waitForVideoToDownload(fAsync, output, errorTime, setting)
