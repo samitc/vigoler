@@ -206,7 +206,7 @@ func downloadVideoLive(w http.ResponseWriter, vid *video) {
 				log.newVideo(nVid)
 			}
 		}
-		vid.async, err = videoUtils.LiveDownload(vid.videoURL, vigoler.GetBestFormat(vid.videoURL.Formats, true, true), liveFormat, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit, fileDownloadedCallback, vid)
+		vid.async, err = videoUtils.LiveDownload(&vigoler.Logger{Logger: log.withVideo(vid)}, vid.videoURL, vigoler.GetBestFormat(vid.videoURL.Formats, true, true), liveFormat, maxSizeInKb, sizeSplit, maxTimeInSec, timeSplit, fileDownloadedCallback, vid)
 		if err != nil {
 			log.downloadVideoError(vid, "live", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -399,7 +399,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	videoUtils = vigoler.VideoUtils{Youtube: &you, Ffmpeg: &ff, Curl: &curl, MinLiveErrorRetryingTime: maxRetry, Log: &vigoler.Logger{Logger: log.logger}}
+	videoUtils = vigoler.VideoUtils{Youtube: &you, Ffmpeg: &ff, Curl: &curl, MinLiveErrorRetryingTime: maxRetry}
 	videosMap = make(map[string]*video)
 	router := mux.NewRouter()
 	router.HandleFunc("/videos", videos).Methods(http.MethodGet)

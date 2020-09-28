@@ -9,6 +9,9 @@ type logger struct {
 	logger *zap.Logger
 }
 
+func (l *logger) withVideo(vid *video) *zap.Logger {
+	return l.logger.With(zap.Any("video", vid))
+}
 func (l *logger) logError(message string, err error) {
 	l.logger.Error(message, zap.Error(err))
 }
