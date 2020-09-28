@@ -68,15 +68,15 @@ func serverCleaner(videosMap map[string]*video, maxTimeDiff int) {
 			if v.async != nil {
 				err := v.async.Stop()
 				if err != nil {
-					log.deleteVideoError(v, err)
+					log.stopVideoError(v, err)
 				}
-				err = finishAsync(v)
+				warn, err := finishAsync(v)
 				if _, ok := err.(*vigoler.CancelError); err != nil && !ok {
-					log.deleteVideoError(v, err)
+					log.deleteVideoError(v, warn, err)
 				}
 				err = os.Remove(v.fileName)
 				if err != nil && !os.IsNotExist(err) {
-					log.deleteVideoError(v, err)
+					log.deleteVideoFileError(v, err)
 				}
 			}
 			if v.parentID != "" {
@@ -312,7 +312,7 @@ func checkFileDownloaded(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusAccepted)
 			json.NewEncoder(w).Encode(vid)
 		} else {
-			err := finishAsync(vid)
+			_, err := finishAsync(vid)
 			if err != nil {
 				writeErrorToClient(w, err)
 			} else {
@@ -321,7 +321,7 @@ func checkFileDownloaded(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-func finishAsync(vid *video) error {
+func finishAsync(vid *video) (string, error) {
 	fileName, err, warn := vid.async.Get()
 	// Get file extension and remove the '.'
 	if fileName != nil {
@@ -329,7 +329,7 @@ func finishAsync(vid *video) error {
 		vid.ext = path.Ext(fileName.(string))[1:]
 	}
 	logVid(vid, warn, err)
-	return err
+	return warn, err
 }
 func download(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -337,18 +337,18 @@ func download(w http.ResponseWriter, r *http.Request) {
 	if vid == nil {
 		w.WriteHeader(http.StatusNotFound)
 	} else if !vid.async.WillBlock() && !vid.IsLive {
-		err := finishAsync(vid)
+		warn, err := finishAsync(vid)
 		if err != nil {
-			log.videoAsyncError(vid, err)
+			log.videoAsyncError(vid, err, warn)
 			w.WriteHeader(http.StatusInternalServerError)
 		} else {
 			fileName := vid.Name + "." + vid.ext
 			file, err := os.Open(vid.fileName)
-			defer file.Close()
 			if err != nil {
 				log.errorOpenVideoOutputFile(vid, fileName, err)
 				w.WriteHeader(http.StatusInternalServerError)
 			} else {
+				defer file.Close()
 				defer func() { vid.updateTime = time.Now() }()
 				vid.updateTime = maxTime
 				w.Header().Set("Content-Disposition", "attachment; filename=\""+fileName+"\"")

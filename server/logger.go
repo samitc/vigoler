@@ -15,8 +15,14 @@ func (l *logger) logError(message string, err error) {
 func (l *logger) deleteVideo(vid *video) {
 	l.logger.Info("Delete video", zap.Any("video", vid))
 }
-func (l *logger) deleteVideoError(vid *video, err error) {
-	l.logger.Error("Error on delete video", zap.Any("video", vid), zap.Error(err))
+func (l *logger) deleteVideoError(vid *video, warn string, err error) {
+	l.logger.Error("Error on delete video", zap.Any("video", vid), zap.String("warn", warn), zap.Error(err))
+}
+func (l *logger) stopVideoError(vid *video, err error) {
+	l.logger.Error("Error on stop video to delete", zap.Any("video", vid), zap.Error(err))
+}
+func (l *logger) deleteVideoFileError(vid *video, err error) {
+	l.logger.Error("Error on delete video file", zap.Any("video", vid), zap.Error(err))
 }
 func (l *logger) logVideoFinish(vid *video, warn string, err error) {
 	const message = "Video finish to download"
@@ -31,8 +37,8 @@ func (l *logger) logVideoFinish(vid *video, warn string, err error) {
 func (l *logger) newVideo(vid *video) {
 	l.logger.Info("New video created", zap.Any("video", vid))
 }
-func (l *logger) videoAsyncError(vid *video, err error) {
-	l.logger.Error("Error while downloading video", zap.Any("video", vid), zap.Error(err))
+func (l *logger) videoAsyncError(vid *video, err error, warn string) {
+	l.logger.Error("Error while downloading video", zap.Any("video", vid), zap.String("warn", warn), zap.Error(err))
 }
 func (l *logger) errorOpenVideoOutputFile(vid *video, filePath string, err error) {
 	l.logger.Error("Error opening video output file", zap.Any("video", vid), zap.String("file", filePath), zap.Error(err))
