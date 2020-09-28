@@ -5,7 +5,6 @@ import (
 	"math"
 	"os"
 	"path"
-	"strings"
 	"testing"
 	"time"
 )
@@ -92,11 +91,8 @@ func downloadStop(t *testing.T, outputFileName string, returnWaitError bool) err
 		clean()
 		panic("Test: " + t.Name() + " timeout")
 	})
-	_, err, warn := async.Get()
+	_, err, _ = async.Get()
 	timer.Stop()
-	if !strings.Contains(warn, serverStopSendData) {
-		t.Errorf("downloadstop() does not contain interupted warn message. warn = %v", warn)
-	}
 	_, fileErr := os.Stat(outputFileName)
 	if fileErr != nil && os.IsNotExist(fileErr) {
 		t.Error("downloadstop() deleted output file")
@@ -106,14 +102,14 @@ func downloadStop(t *testing.T, outputFileName string, returnWaitError bool) err
 func TestFFmpegWrapper_downloadStop(t *testing.T) {
 	const outputFileName = "downloadStopTest.mp4"
 	err := downloadStop(t, outputFileName, false)
-	if err != nil {
+	if err != ServerStopSendDataError {
 		t.Fatalf("downloadstop() error = %v", err)
 	}
 }
 func TestFFmpegWrapper_downloadStopErr(t *testing.T) {
 	const outputFileName = "downloadStopTest.mp4"
 	err := downloadStop(t, outputFileName, true)
-	if _, isWait := err.(*WaitError); err == nil || !isWait {
+	if err != ServerStopSendDataError {
 		t.Fatalf("downloadstop() error = %v", err)
 	}
 }
