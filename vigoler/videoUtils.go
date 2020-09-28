@@ -83,8 +83,7 @@ func (vu *VideoUtils) LiveDownload(url VideoUrl, format Format, ext string, maxS
 		vu.Log.startDownloadLive(url, output)
 		_, err, warn := fAsync.Get()
 		wa.remove(fAsync)
-		_, isWaitError := err.(*WaitError)
-		if isWaitError {
+		if _, isWaitError := err.(*WaitError); isWaitError || err == ServerStopSendDataError {
 			vu.Log.finishDownloadLive(url, output, warn, err)
 			err = nil
 			now := time.Now()

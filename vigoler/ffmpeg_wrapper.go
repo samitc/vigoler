@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const serverStopSendData = "server stop send data"
+var ServerStopSendDataError = errors.New("server stop send data")
 
 type FFmpegWrapper struct {
 	ffmpeg                        externalApp
@@ -137,6 +137,7 @@ func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, output string, ret
 	var wa WaitAble
 	var curFuncTime *time.Timer = nil
 	var err error
+	var stopError error
 	// ffmpeg command template: ffmpeg -v warning -stats [args] -map_metadata 0 -c copy {output}
 	finalArgs := make([]string, 0, 3+len(args))
 	finalArgs = append(finalArgs, "-v", "warning", "-stats")
@@ -169,13 +170,17 @@ func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, output string, ret
 		return true
 	}, func(err error) {
 		if !downloadStarted {
-			err = errors.New("Unknown error in ffmpeg")
+			if err == nil {
+				err = errors.New("Unknown error in ffmpeg")
+			}
+		} else if stopError != nil {
+			err = stopError
 		}
 		async.SetResult(nil, err, warn)
 	}, finalArgs...)
 	funcTime := func() {
-		warn += serverStopSendData
 		_ = wa.Stop()
+		stopError = ServerStopSendDataError
 	}
 	if ff.maxSecondsWithoutOutputToStop != -1 {
 		curFuncTime = time.AfterFunc(time.Duration(ff.maxSecondsWithoutOutputToStop)*time.Second, funcTime)
