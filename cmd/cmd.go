@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"go.uber.org/zap"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,7 +54,7 @@ func downloadBestAndMerge(url VideoUrl, videoUtils *VideoUtils, outputFormat str
 		return async
 	}
 }
-func liveDownload(videos <-chan outputVideo, videoUtils *VideoUtils, wg *sync.WaitGroup) {
+func liveDownload(l *zap.Logger, videos <-chan outputVideo, videoUtils *VideoUtils, wg *sync.WaitGroup) {
 	defer wg.Done()
 	var filesName []string
 	maxSizeInKb := 9.8 * 1024 * 1024
@@ -62,7 +63,7 @@ func liveDownload(videos <-chan outputVideo, videoUtils *VideoUtils, wg *sync.Wa
 	timeSplitThreshold := 5.4 * 60 * 60
 	var downloadAsync []*Async
 	for video := range videos {
-		async, err := videoUtils.LiveDownload(video.video, GetBestFormat(video.video.Formats, true, true), video.format, int(maxSizeInKb), int(sizeSplitThreshold), int(maxTimeInSec), int(timeSplitThreshold), nil, nil)
+		async, err := videoUtils.LiveDownload(&Logger{Logger: l.With(zap.Any("video", video))}, video.video, GetBestFormat(video.video.Formats, true, true), video.format, int(maxSizeInKb), int(sizeSplitThreshold), int(maxTimeInSec), int(timeSplitThreshold), nil, nil)
 		if err != nil {
 			fmt.Println(err)
 		} else {
@@ -83,6 +84,10 @@ func main() {
 	flag.Var(&directories, "n", "directories names")
 	flag.Var(&outputFormat, "f", "output file format")
 	flag.Parse()
+	l, err := zap.NewProduction(zap.WithCaller(false))
+	if err != nil {
+		panic(err)
+	}
 	youtube := CreateYoutubeDlWrapper()
 	ffmpeg := CreateFfmpegWrapper(-1, false)
 	curl := CreateCurlWrapper(3)
@@ -103,7 +108,7 @@ func main() {
 	var pendingDownloadNames []string
 	var pendingLiveAsync []*Async
 	var pendingLiveNames []string
-	go liveDownload(liveDownChan, &videoUtils, &wg)
+	go liveDownload(l, liveDownChan, &videoUtils, &wg)
 	for i, a := range pendingUrlAsync {
 		urls := getAsyncData(a, downloads[i]).([]VideoUrl)
 		for _, url := range urls {
