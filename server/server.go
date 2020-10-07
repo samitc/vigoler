@@ -59,40 +59,42 @@ func createLogger() logger {
 	}
 	return logger{logger: l}
 }
-
+func deleteVideo(videosMap map[string]*video, id string, v *video) {
+	log.deleteVideo(v)
+	if v.async != nil {
+		err := v.async.Stop()
+		if err != nil {
+			log.stopVideoError(v, err)
+		}
+		warn, err := finishAsync(v)
+		if _, ok := err.(*vigoler.CancelError); err != nil && !ok {
+			log.deleteVideoError(v, warn, err)
+		}
+		err = os.Remove(v.fileName)
+		if err != nil && !os.IsNotExist(err) {
+			log.deleteVideoFileError(v, err)
+		}
+	}
+	if v.parentID != "" {
+		if val, ok := videosMap[v.parentID]; ok {
+			i := 0
+			size := len(val.Ids)
+			for ; i < size; i++ {
+				if v.ID == val.Ids[i] {
+					break
+				}
+			}
+			val.Ids[i] = val.Ids[size-1]
+			val.Ids = val.Ids[:size-1]
+		}
+	}
+	delete(videosMap, id)
+}
 func serverCleaner(videosMap map[string]*video, maxTimeDiff int) {
 	curTime := time.Now()
 	for k, v := range videosMap {
 		if (int)(curTime.Sub(v.updateTime).Seconds()) > maxTimeDiff {
-			log.deleteVideo(v)
-			if v.async != nil {
-				err := v.async.Stop()
-				if err != nil {
-					log.stopVideoError(v, err)
-				}
-				warn, err := finishAsync(v)
-				if _, ok := err.(*vigoler.CancelError); err != nil && !ok {
-					log.deleteVideoError(v, warn, err)
-				}
-				err = os.Remove(v.fileName)
-				if err != nil && !os.IsNotExist(err) {
-					log.deleteVideoFileError(v, err)
-				}
-			}
-			if v.parentID != "" {
-				if val, ok := videosMap[v.parentID]; ok {
-					i := 0
-					size := len(val.Ids)
-					for ; i < size; i++ {
-						if v.ID == val.Ids[i] {
-							break
-						}
-					}
-					val.Ids[i] = val.Ids[size-1]
-					val.Ids = val.Ids[:size-1]
-				}
-			}
-			delete(videosMap, k)
+			deleteVideo(videosMap, k, v)
 		}
 	}
 }
@@ -301,6 +303,17 @@ func process(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(videos)
 }
+func deleteVideoRequest(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	vidId := vars["ID"]
+	vid := videosMap[vidId]
+	if vid == nil {
+		w.WriteHeader(http.StatusNotFound)
+	} else {
+		deleteVideo(videosMap, vidId, vid)
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
 func checkFileDownloaded(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	vid := videosMap[vars["ID"]]
@@ -406,6 +419,7 @@ func main() {
 	router.HandleFunc("/videos", process).Methods(http.MethodPost)
 	router.HandleFunc("/videos/{ID}", checkFileDownloaded).Methods(http.MethodGet)
 	router.HandleFunc("/videos/{ID}", downloadVideo).Methods(http.MethodPost)
+	router.HandleFunc("/videos/{ID}", deleteVideoRequest).Methods(http.MethodDelete)
 	router.HandleFunc("/videos/{ID}/download", download).Methods(http.MethodGet)
 	maxTimeDiff, err := strconv.Atoi(os.Getenv("VIGOLER_MAX_TIME_DIFF"))
 	if err != nil {

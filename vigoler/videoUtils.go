@@ -91,7 +91,9 @@ func (vu *VideoUtils) LiveDownload(log *Logger, url VideoUrl, format Format, ext
 				if lLiveVideoCallback != nil {
 					lLiveVideoCallback(lData, output, fAsync)
 				}
-				downloadVideo(now, setting)
+				if !wa.isStopped {
+					downloadVideo(now, setting)
+				}
 			}
 		} else {
 			if err != nil {
@@ -133,7 +135,9 @@ func (vu *VideoUtils) LiveDownload(log *Logger, url VideoUrl, format Format, ext
 		}
 	}
 	splitCallback := func(url string, setting DownloadSettings, output string) {
-		downloadVideo(time.Time{}, setting)
+		if !wa.isStopped {
+			downloadVideo(time.Time{}, setting)
+		}
 	}
 	output := vu.createFileName(ext, format)
 	setting := DownloadSettings{CallbackBeforeSplit: splitCallback, MaxSizeInKb: maxSizeInKb, MaxTimeInSec: maxTimeInSec, SizeSplitThreshold: sizeSplitThreshold, TimeSplitThreshold: timeSplitThreshold, returnWaitError: true}
