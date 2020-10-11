@@ -149,6 +149,24 @@ func TestVideoUtils_needToDownloadBestFormat(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			name: "No merged formats",
+			args: args{
+				bestVideoFormats:            bestFormat,
+				bestAudioFormats:            bestAudioFormats,
+				bestFormats:                 nil,
+				mergeOnlyIfHigherResolution: true,
+			},
+		},
+		{
+			name: "No merged formats force merge",
+			args: args{
+				bestVideoFormats:            bestFormat,
+				bestAudioFormats:            bestAudioFormats,
+				bestFormats:                 nil,
+				mergeOnlyIfHigherResolution: false,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
