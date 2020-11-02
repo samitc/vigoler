@@ -13,7 +13,7 @@ RUN wget https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.t
 RUN curl -L https://yt-dl.org/downloads/latest/youtube-dl -o youtube-dl && \
     chmod a+rx youtube-dl
 COPY . .
-RUN go build -v -o app ./server/
+RUN go build -v -o build/vigoler ./server/
 
 FROM ubuntu
 WORKDIR /usr/local/bin
@@ -21,5 +21,5 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 curl fontconfig ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/python3 /usr/bin/python
-COPY --from=builder /usr/src/app/app /usr/src/app/youtube-dl /usr/src/app/ffmpeg /usr/src/app/ffprobe /usr/src/app/phantomjs ./
-CMD ["./app"]
+COPY --from=builder /usr/src/app/build/vigoler /usr/src/app/youtube-dl /usr/src/app/ffmpeg /usr/src/app/ffprobe /usr/src/app/phantomjs ./
+CMD ["./vigoler"]
