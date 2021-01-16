@@ -124,11 +124,12 @@ func createVideos(url string) ([]video, error) {
 	if warn != "" {
 		log.warnInVideoCreate(url, warn)
 	}
-	if err != nil {
+	videoUrls := urls.([]vigoler.VideoUrl)
+	if len(videoUrls) == 0 && err != nil {
 		return nil, err
 	}
 	videos := make([]video, 0)
-	for _, url := range urls.([]vigoler.VideoUrl) {
+	for _, url := range videoUrls {
 		if supportLive || !url.IsLive {
 			vid := video{videoURL: url, ID: createID(), Name: url.Name, IsLive: url.IsLive, isLogged: false}
 			videos = append(videos, vid)
