@@ -1,7 +1,6 @@
 package vigoler
 
 import (
-	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -22,8 +21,17 @@ type TypedError interface {
 	error
 	Type() string
 }
+type LogError interface {
+	error
+	LogAttributes() map[string]interface{}
+}
 type FileTooBigError struct {
 	url VideoUrl
+}
+type FormatNotFoundError struct {
+	format Format
+	warn   string
+	videos []VideoUrl
 }
 
 func (e *FileTooBigError) Error() string {
@@ -31,6 +39,12 @@ func (e *FileTooBigError) Error() string {
 }
 func (e *FileTooBigError) Type() string {
 	return "File too big error"
+}
+func (e *FormatNotFoundError) Error() string {
+	return fmt.Sprintf("Format %s not found", e.format.formatID)
+}
+func (e *FormatNotFoundError) LogAttributes() map[string]interface{} {
+	return map[string]interface{}{"warn": e.warn, "videos": e.videos}
 }
 func (vu *VideoUtils) createFileName(ext string, format Format) string {
 	if vu.random == nil {
@@ -52,13 +66,17 @@ func (vu *VideoUtils) chooseDownload(url, output, protocol string, headers map[s
 }
 func (vu *VideoUtils) recreateURL(url VideoUrl, format Format) (Format, error) {
 	const retryingTime = 2
+	var lastWarn string
+	var lastVideos []VideoUrl
 	for i := 0; i < retryingTime; i++ {
 		async, err := vu.Youtube.GetUrls(url.url)
 		if err != nil {
 			return Format{}, err
 		}
-		videos, err, _ := async.Get()
-		for _, video := range videos.([]VideoUrl) {
+		videos, _, warn := async.Get()
+		lastVideos = videos.([]VideoUrl)
+		lastWarn = warn
+		for _, video := range lastVideos {
 			if url.ID == video.ID {
 				for _, form := range video.Formats {
 					if form.formatID == format.formatID {
@@ -68,7 +86,11 @@ func (vu *VideoUtils) recreateURL(url VideoUrl, format Format) (Format, error) {
 			}
 		}
 	}
-	return Format{}, errors.New("format not found")
+	return Format{}, &FormatNotFoundError{
+		format: format,
+		warn:   lastWarn,
+		videos: lastVideos,
+	}
 }
 func (vu *VideoUtils) LiveDownload(log *Logger, url VideoUrl, format Format, ext string, maxSizeInKb, sizeSplitThreshold, maxTimeInSec, timeSplitThreshold int, liveVideoCallback LiveVideoCallback, data interface{}) (*Async, error) {
 	var wg sync.WaitGroup
@@ -114,7 +136,11 @@ func (vu *VideoUtils) LiveDownload(log *Logger, url VideoUrl, format Format, ext
 		defer wg.Done()
 		format, err := vu.recreateURL(url, format)
 		if err != nil {
-			log.liveRecreatedError(url, err)
+			if logError, ok := err.(LogError); ok {
+				log.logLogError(url, "Recreate live to download", logError)
+			} else {
+				log.liveRecreatedError(url, err)
+			}
 			if lastErr == nil {
 				lastErr, lastWarn = err, ""
 			}

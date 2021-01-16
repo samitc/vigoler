@@ -58,19 +58,27 @@ func (l *logger) downloadVideoError(vid *video, downloadType string, err error) 
 func (l *logger) startDownloadVideo(vid *video) {
 	l.logger.Info("Start downloading video", zap.Any("video", vid))
 }
-func (v *video) MarshalLogObject(enc zapcore.ObjectEncoder) error {
+func (v video) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddString("ID", v.ID)
 	enc.AddString("name", v.Name)
 	enc.AddBool("is_live", v.IsLive)
-	err := enc.AddArray("ids", stringArray(v.Ids))
-	if err != nil {
-		return err
+	if v.Ids != nil {
+		err := enc.AddArray("ids", stringArray(v.Ids))
+		if err != nil {
+			return err
+		}
 	}
-	enc.AddString("parent_id", v.parentID)
-	enc.AddString("file_name", v.fileName)
-	enc.AddString("extension", v.ext)
+	if v.parentID != "" {
+		enc.AddString("parent_id", v.parentID)
+	}
+	if v.fileName != "" {
+		enc.AddString("file_name", v.fileName)
+	}
+	if v.ext != "" {
+		enc.AddString("extension", v.ext)
+	}
 	enc.AddTime("update_time", v.updateTime)
-	return enc.AddReflected("video_url", v.videoURL)
+	return enc.AddObject("video_url", &v.videoURL)
 }
 
 type stringArray []string
