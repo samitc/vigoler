@@ -179,8 +179,8 @@ func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, output string, ret
 		async.SetResult(nil, err, warn)
 	}, finalArgs...)
 	funcTime := func() {
-		_ = wa.Stop()
 		stopError = ServerStopSendDataError
+		_ = wa.Stop()
 	}
 	if ff.maxSecondsWithoutOutputToStop != -1 {
 		curFuncTime = time.AfterFunc(time.Duration(ff.maxSecondsWithoutOutputToStop)*time.Second, funcTime)
