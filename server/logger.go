@@ -44,7 +44,7 @@ func (l *logger) videoAsyncError(vid *video, err error, warn string) {
 	l.logger.Error("Error while downloading video", zap.Any("video", vid), zap.String("warn", warn), zap.Error(err))
 }
 func (l *logger) errorOpenVideoOutputFile(vid *video, filePath string, err error) {
-	l.logger.Error("Error opening video output file", zap.Any("video", vid), zap.String("file", filePath), zap.Error(err))
+	l.logger.Error("Error opening video output file", zap.Any("video", vid), zap.String("output", filePath), zap.Error(err))
 }
 func (l *logger) warnInVideoCreate(url string, warn string) {
 	l.logger.Warn("Warning while creating videos", zap.String("url", url), zap.String("warn", warn))
@@ -72,7 +72,7 @@ func (v video) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 		enc.AddString("parent_id", v.parentID)
 	}
 	if v.fileName != "" {
-		enc.AddString("file_name", v.fileName)
+		enc.AddString("output", v.fileName)
 	}
 	if v.ext != "" {
 		enc.AddString("extension", v.ext)
