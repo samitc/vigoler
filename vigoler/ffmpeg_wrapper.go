@@ -130,62 +130,12 @@ func runFFmpeg(ffmpeg *externalApp, returnWaitError bool, lineCallback func(stri
 func isLineContainsHttpReuseError(line string) bool {
 	return strings.Contains(line, "Cannot reuse HTTP connection for different host: ") || strings.Contains(line, "keepalive request failed for ")
 }
-func (ff *FFmpegWrapper) runFFmpeg(statsCallback FFmpegState, output string, returnWaitError bool, args ...string) (WaitAble, *Async, error) {
-	warn := ""
-	downloadStarted := false
-	var async *Async
-	var wa WaitAble
-	var curFuncTime *time.Timer = nil
-	var err error
-	var stopError error
+func createFfmpegArgs(output string, args ...string) []string {
 	// ffmpeg command template: ffmpeg -v warning -stats [args] -map_metadata 0 -c copy {output}
 	finalArgs := make([]string, 0, 3+len(args))
 	finalArgs = append(finalArgs, "-v", "warning", "-stats")
 	finalArgs = append(finalArgs, args...)
-	finalArgs = append(finalArgs, "-map_metadata", "0", "-c", "copy", output)
-	wa, async, err = runFFmpeg(&ff.ffmpeg, returnWaitError, func(line string) bool {
-		// Two different message can be here (one for video and one for audio)
-		// video - frame= 2039 fps=161 q=-1.0 Lsize=   10808kB time=00:01:07.96 bitrate=1302.7kbits/s speed=5.36x
-		// audio - size=    8553kB time=00:09:11.75 bitrate= 127.0kbits/s speed=3.37e+03x
-		isVideo := strings.HasPrefix(line, "frame=")
-		isAudio := strings.HasPrefix(line, "size=")
-		if isVideo || isAudio {
-			downloadStarted = true
-			if curFuncTime != nil {
-				curFuncTime.Reset(time.Duration(ff.maxSecondsWithoutOutputToStop) * time.Second)
-			}
-			if statsCallback != nil {
-				startIndex := 0
-				if isVideo {
-					startIndex = 4
-				}
-				timeInSec, sizeInKb := processData(line, startIndex)
-				statsCallback(sizeInKb, timeInSec)
-			}
-		} else {
-			if !ff.ignoreHttpReuseErros || !isLineContainsHttpReuseError(line) {
-				warn += line
-			}
-		}
-		return true
-	}, func(err error) {
-		if !downloadStarted {
-			if err == nil {
-				err = errors.New("Unknown error in ffmpeg")
-			}
-		} else if stopError != nil {
-			err = stopError
-		}
-		async.SetResult(nil, err, warn)
-	}, finalArgs...)
-	funcTime := func() {
-		stopError = ServerStopSendDataError
-		_ = wa.Stop()
-	}
-	if ff.maxSecondsWithoutOutputToStop != -1 {
-		curFuncTime = time.AfterFunc(time.Duration(ff.maxSecondsWithoutOutputToStop)*time.Second, funcTime)
-	}
-	return wa, async, err
+	return append(finalArgs, "-map_metadata", "0", "-c", "copy", output)
 }
 func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 	// [-i {input}]
@@ -193,8 +143,12 @@ func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 	for _, i := range input {
 		finalArgs = append(finalArgs, "-i", i)
 	}
-	_, async, err := ff.runFFmpeg(nil, output, false, finalArgs...)
-	return async, err
+	wa, err := ff.ffmpeg.runCommandWait(context.Background(), finalArgs...)
+	if err != nil {
+		return nil, err
+	}
+	async := createAsyncWaitAble(wa)
+	return &async, err
 }
 func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output string, headers map[string]string, inputArgs ...string) (*Async, error) {
 	if len(url) == 0 {
@@ -202,7 +156,15 @@ func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output s
 	}
 	const kbToByte = 1024
 	var statsCallback FFmpegState
+	var dataStoppingTimer *time.Timer
+	var timeSplitFunc *time.Timer
+	var stopError error
+	var async *Async
+	var err error
+	var wa WaitAble
+	warn := ""
 	args := append(inputArgs, "-i", url)
+	downloadStarted := false
 	if setting.CallbackBeforeSplit != nil && (setting.SizeSplitThreshold > 0 || setting.TimeSplitThreshold > 0) {
 		if setting.SizeSplitThreshold <= 0 {
 			setting.SizeSplitThreshold = setting.MaxSizeInKb
@@ -212,7 +174,7 @@ func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output s
 		}
 		isAlreadyCalled := false
 		statsCallback = func(sizeInKb, timeInSec int) {
-			if !isAlreadyCalled && (timeInSec > setting.TimeSplitThreshold || sizeInKb > setting.SizeSplitThreshold) {
+			if !isAlreadyCalled && (timeInSec >= setting.TimeSplitThreshold || sizeInKb >= setting.SizeSplitThreshold) {
 				go setting.CallbackBeforeSplit(url, setting, output)
 				isAlreadyCalled = true
 			}
@@ -220,12 +182,63 @@ func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output s
 	}
 	if setting.MaxTimeInSec > 0 {
 		args = append(args, "-t", strconv.Itoa(setting.MaxTimeInSec))
+		timeSplitFunc = time.AfterFunc(time.Duration(setting.TimeSplitThreshold)*time.Second, func() {
+			statsCallback(-1, setting.TimeSplitThreshold)
+		})
 	}
 	if setting.MaxSizeInKb > 0 {
 		args = append(args, "-fs", strconv.Itoa(setting.MaxSizeInKb*kbToByte))
 	}
 	args = addFfmpegHeaders(args, headers)
-	_, async, err := ff.runFFmpeg(statsCallback, output, setting.returnWaitError, args...)
+	args = createFfmpegArgs(output, args...)
+	outputCallback := func(line string) bool {
+		// Two different message can be here (one for video and one for audio)
+		// video - frame= 2039 fps=161 q=-1.0 Lsize=   10808kB time=00:01:07.96 bitrate=1302.7kbits/s speed=5.36x
+		// audio - size=    8553kB time=00:09:11.75 bitrate= 127.0kbits/s speed=3.37e+03x
+		isVideo := strings.HasPrefix(line, "frame=")
+		isAudio := strings.HasPrefix(line, "size=")
+		if isVideo || isAudio {
+			downloadStarted = true
+			if dataStoppingTimer != nil {
+				dataStoppingTimer.Reset(time.Duration(ff.maxSecondsWithoutOutputToStop) * time.Second)
+			}
+			if statsCallback != nil {
+				startIndex := 0
+				if isVideo {
+					startIndex = 4
+				}
+				_, sizeInKb := processData(line, startIndex)
+				statsCallback(sizeInKb, -1)
+			}
+		} else {
+			if !ff.ignoreHttpReuseErros || !isLineContainsHttpReuseError(line) {
+				warn += line
+			}
+		}
+		return true
+	}
+	wa, async, err = runFFmpeg(&ff.ffmpeg, setting.returnWaitError, outputCallback, func(err error) {
+		if !downloadStarted {
+			if err == nil {
+				err = errors.New("Unknown error in ffmpeg")
+			}
+		} else if stopError != nil {
+			err = stopError
+		}
+		if dataStoppingTimer != nil {
+			dataStoppingTimer.Stop()
+		}
+		if timeSplitFunc != nil {
+			timeSplitFunc.Stop()
+		}
+		async.SetResult(nil, err, warn)
+	}, args...)
+	if ff.maxSecondsWithoutOutputToStop != -1 {
+		dataStoppingTimer = time.AfterFunc(time.Duration(ff.maxSecondsWithoutOutputToStop)*time.Second, func() {
+			stopError = ServerStopSendDataError
+			_ = wa.Stop()
+		})
+	}
 	return async, err
 }
 func (ff *FFmpegWrapper) DownloadSplitHeaders(url string, setting DownloadSettings, output string, headers map[string]string) (*Async, error) {
