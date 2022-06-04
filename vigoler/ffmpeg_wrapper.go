@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 var ServerStopSendDataError = errors.New("server stop send data")
@@ -150,7 +152,7 @@ func (ff *FFmpegWrapper) Merge(output string, input ...string) (*Async, error) {
 	async := createAsyncWaitAble(wa)
 	return &async, err
 }
-func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output string, headers map[string]string, inputArgs ...string) (*Async, error) {
+func (ff *FFmpegWrapper) download(logger *zap.Logger, url string, setting DownloadSettings, output string, headers map[string]string, inputArgs ...string) (*Async, error) {
 	if len(url) == 0 {
 		return nil, &ArgumentError{stackTrack: debug.Stack(), argName: "url", argValue: url}
 	}
@@ -213,6 +215,9 @@ func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output s
 		} else {
 			if !ff.ignoreHttpReuseErros || !isLineContainsHttpReuseError(line) {
 				warn += line
+				if logger != nil {
+					logger.Warn("live warning", zap.String("warn", line))
+				}
 			}
 		}
 		return true
@@ -241,17 +246,11 @@ func (ff *FFmpegWrapper) download(url string, setting DownloadSettings, output s
 	}
 	return async, err
 }
-func (ff *FFmpegWrapper) DownloadSplitHeaders(url string, setting DownloadSettings, output string, headers map[string]string) (*Async, error) {
-	return ff.download(url, setting, output, headers)
-}
-func (ff *FFmpegWrapper) DownloadSplit(url string, setting DownloadSettings, output string) (*Async, error) {
-	return ff.download(url, setting, output, nil)
-}
-func (ff *FFmpegWrapper) Download(url, output string) (*Async, error) {
-	return ff.download(url, DownloadSettings{}, output, nil)
+func (ff *FFmpegWrapper) DownloadSplit(url string, setting DownloadSettings, output string, logger *zap.Logger) (*Async, error) {
+	return ff.download(logger, url, setting, output, nil)
 }
 func (ff *FFmpegWrapper) DownloadHeaders(url string, headers map[string]string, output string) (*Async, error) {
-	return ff.download(url, DownloadSettings{}, output, headers)
+	return ff.download(nil, url, DownloadSettings{}, output, headers)
 }
 func (ff *FFmpegWrapper) getInputSize(url string, headers map[string]string) (*Async, error) {
 	args := []string{"-v", "error", "-show_entries", "format=size", "-of", "default=noprint_wrappers=1:nokey=1", url}
@@ -351,7 +350,7 @@ func (ff *FFmpegWrapper) DownloadLiveUntilNow(url string, output string) (*Async
 					if err != nil {
 						async.SetResult(nil, err, "")
 					} else if !wa.isStopped {
-						wa.dAsync, err = ff.download(url, DownloadSettings{MaxTimeInSec: int(maxTime) + 60}, output, nil, "-live_start_index", "0")
+						wa.dAsync, err = ff.download(nil, url, DownloadSettings{MaxTimeInSec: int(maxTime) + 60}, output, nil, "-live_start_index", "0")
 						if err != nil {
 							async.SetResult(nil, err, "")
 						} else {

@@ -1,15 +1,19 @@
 package vigoler
 
 import (
+	"reflect"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"reflect"
 )
 
 type Logger struct {
 	Logger *zap.Logger
 }
 
+func (l *Logger) withLiveId(liveId int) *zap.Logger {
+	return l.Logger.With(zap.Int("live_id", liveId))
+}
 func (l *Logger) startDownloadLive(url VideoUrl, output string) {
 	l.Logger.Info("Start downloading live", zap.Any("video_url", url), zap.String("output", output))
 }

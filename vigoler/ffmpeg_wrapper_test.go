@@ -69,7 +69,7 @@ func downloadStop(t *testing.T, outputFileName string, returnWaitError bool) err
 	if err != nil {
 		panic(err)
 	}
-	async, err := ffmpeg.download(addr, DownloadSettings{
+	async, err := ffmpeg.download(nil, addr, DownloadSettings{
 		SizeSplitThreshold:  999999999,
 		TimeSplitThreshold:  999999999,
 		CallbackBeforeSplit: func(url string, setting DownloadSettings, output string) {},

@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -98,6 +99,7 @@ func (vu *VideoUtils) LiveDownload(log *Logger, url VideoUrl, format Format, ext
 	var lastErr error
 	lastWarn := ""
 	lData := data
+	runsIndex := int32(0)
 	lLiveVideoCallback := liveVideoCallback
 	var downloadVideo func(errorsCount time.Time, setting DownloadSettings)
 	waitForVideoToDownload := func(fAsync *Async, output string, errorTime time.Time, setting DownloadSettings) {
@@ -148,7 +150,8 @@ func (vu *VideoUtils) LiveDownload(log *Logger, url VideoUrl, format Format, ext
 			output := vu.createFileName(ext, format)
 			log.liveRecreated(url, output)
 			var fAsync *Async
-			fAsync, err = vu.Ffmpeg.DownloadSplit(format.url, setting, output)
+			curRunIndex := atomic.AddInt32(&runsIndex, 1)
+			fAsync, err = vu.Ffmpeg.DownloadSplit(format.url, setting, output, log.withLiveId(int(curRunIndex)))
 			if err != nil {
 				log.liveDownloadError(url, output, err)
 				if lastErr == nil {
@@ -167,7 +170,8 @@ func (vu *VideoUtils) LiveDownload(log *Logger, url VideoUrl, format Format, ext
 	}
 	output := vu.createFileName(ext, format)
 	setting := DownloadSettings{CallbackBeforeSplit: splitCallback, MaxSizeInKb: maxSizeInKb, MaxTimeInSec: maxTimeInSec, SizeSplitThreshold: sizeSplitThreshold, TimeSplitThreshold: timeSplitThreshold, returnWaitError: true}
-	fAsync, err := vu.Ffmpeg.DownloadSplit(format.url, setting, output)
+	curRunIndex := atomic.AddInt32(&runsIndex, 1)
+	fAsync, err := vu.Ffmpeg.DownloadSplit(format.url, setting, output, log.withLiveId(int(curRunIndex)))
 	if err != nil {
 		return nil, err
 	}
