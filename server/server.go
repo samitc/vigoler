@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"go.uber.org/zap"
 	"io"
 	"math"
 	"net/http"
@@ -12,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -315,6 +316,20 @@ func deleteVideoRequest(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
+func stopVideoDownload(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	vid := videosMap[vars["ID"]]
+	if vid == nil {
+		w.WriteHeader(http.StatusNotFound)
+	} else {
+		err := vid.async.Stop()
+		if err != nil {
+			writeErrorToClient(w, err)
+		} else {
+			json.NewEncoder(w).Encode(vid)
+		}
+	}
+}
 func checkFileDownloaded(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	vid := videosMap[vars["ID"]]
@@ -420,6 +435,7 @@ func main() {
 	router.HandleFunc("/videos", process).Methods(http.MethodPost)
 	router.HandleFunc("/videos/{ID}", checkFileDownloaded).Methods(http.MethodGet)
 	router.HandleFunc("/videos/{ID}", downloadVideo).Methods(http.MethodPost)
+	router.HandleFunc("/videos/{ID}", stopVideoDownload).Methods(http.MethodPatch)
 	router.HandleFunc("/videos/{ID}", deleteVideoRequest).Methods(http.MethodDelete)
 	router.HandleFunc("/videos/{ID}/download", download).Methods(http.MethodGet)
 	maxTimeDiff, err := strconv.Atoi(os.Getenv("VIGOLER_MAX_TIME_DIFF"))
