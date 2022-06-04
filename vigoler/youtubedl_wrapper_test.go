@@ -86,7 +86,7 @@ func idsToFormats(ids ...string) []Format {
 	return formats
 }
 func formatsTest(t *testing.T, expectedFormats, formats []Format, checkOnlyIds bool) {
-	if len(expectedFormats) != len(expectedFormats) {
+	if len(formats) != len(expectedFormats) {
 		t.Fatalf("getUrls number of formats want = %v, got = %v", len(expectedFormats), len(formats))
 	}
 	for i, f := range expectedFormats {
